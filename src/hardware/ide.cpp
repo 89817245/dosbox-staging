@@ -117,7 +117,7 @@ public:
     IDEController *controller = nullptr;
     uint16_t feature = 0;
     uint16_t count = 0;
-    uint16_t lba[3] = {};  /* feature = BASE+1  count = BASE+2   lba[3] = BASE+3,+4,+5 */
+    uint16_t lba[3] = {}; /* feature = BASE+1  count = BASE+2   lba[3] = BASE+3,+4,+5 */
     uint8_t command = 0;
     uint8_t drivehead = 0;
     uint8_t status = 0x00; /* command/status = BASE+7  drivehead = BASE+6 */
@@ -132,25 +132,28 @@ public:
         lba[3]: 0x1F3 (Word 02h) 0x1F4 (Word 03h) and 0x1F5 (Word 04h)
      drivehead: 0x1F6 (copy of last value written)
        command: 0x1F7 (Word 05h)
-        status: 0x1F7 (value read back to IDE controller, including busy and drive ready bits as well as error status)
+        status: 0x1F7 (value read back to IDE controller, including busy and
+                      drive ready bits as well as error status)
 
-    In C/H/S modes lba[3] becomes lba[0]=sector lba[1]=cylinder-low lba[2]=cylinder-high and
-    the code must read the 4-bit head number from drivehead[bits 3:0].
+    In C/H/S modes lba[3] becomes lba[0]=sector lba[1]=cylinder-low
+    lba[2]=cylinder-high and the code must read the 4-bit head number from
+    drivehead[bits 3:0].
 
-    "drivehead" in this struct is always maintained as a device copy of the controller's
-    drivehead value. it is only updated on write, and not returned on read.
+    "drivehead" in this struct is always maintained as a device copy of the
+    controller's drivehead value. it is only updated on write, and not
+    returned on read.
 
-    "allow_writing" if set allows the DOS program/OS to write the registers. It is
-    clear during command execution, obviously, so the state of the device is not confused
-    while executing the command.
+    "allow_writing" if set allows the DOS program/OS to write the registers.
+    It is clear during command execution, obviously, so the state of the
+    device is not confused while executing the command.
 
     Registers are 16-bit where applicable so future revisions of this code
     can support LBA48 commands */
 public:
     /* tweakable parameters */
-    double ide_select_delay = 0.5; /* 500us. time between writing 0x1F6 and drive readiness */
-    double ide_spinup_delay = 3000; /* 3 seconds. time it takes to spin the hard disk motor up to speed */
-    double ide_spindown_delay = 1000;  /* 1 second. time it takes for hard disk motor to spin down */
+    double ide_select_delay = 0.5;    /* 500us. time between writing 0x1F6 and drive readiness */
+    double ide_spinup_delay = 3000;   /* 3 seconds. time it takes to spin the hard disk motor up to speed */
+    double ide_spindown_delay = 1000; /* 1 second. time it takes for hard disk motor to spin down */
     double ide_identify_command_delay = 0.01; /* 10us */
 public:
     IDEDevice(IDEController *c) : controller(c) {}
@@ -181,10 +184,10 @@ public:
 
     virtual void writecommand(uint8_t cmd);
 public:
-    std::string id_serial;
-    std::string id_firmware_rev;
-    std::string id_model;
-    unsigned char bios_disk_index;
+    std::string id_serial = "8086";
+    std::string id_firmware_rev = "8086";
+    std::string id_model = "DOSBox IDE disk";
+    unsigned char bios_disk_index = 0;
     std::shared_ptr<imageDisk> getBIOSdisk();
     void update_from_biosdisk();
     virtual Bitu data_read(Bitu iolen); /* read from 1F0h data port from IDE device */
@@ -195,12 +198,20 @@ public:
     virtual void io_completion();
     virtual bool increment_current_address(Bitu count=1);
 public:
-    Bitu multiple_sector_max,multiple_sector_count;
-    Bitu heads,sects,cyls,headshr,progress_count;
-    Bitu phys_heads,phys_sects,phys_cyls;
+    Bitu multiple_sector_count = 1;
+    Bitu heads = 0;
+    Bitu sects = 0;
+    Bitu cyls = 0;
+    Bitu headshr = 0;
+    Bitu progress_count = 0;
+    Bitu phys_heads = 0;
+    Bitu phys_sects = 0;
+    Bitu phys_cyls = 0;
     unsigned char sector[512 * 128] = {};
-    Bitu sector_i,sector_total;
-    bool geo_translate;
+    Bitu multiple_sector_max = sizeof(sector) / 512;
+    Bitu sector_i = 0;
+    Bitu sector_total = 0;
+    bool geo_translate = false;
 };
 
 enum {
@@ -221,9 +232,9 @@ public:
 
     virtual void writecommand(uint8_t cmd);
 public:
-    std::string id_serial;
-    std::string id_firmware_rev;
-    std::string id_model;
+    std::string id_serial = "123456789";
+    std::string id_firmware_rev = "0.83-X";
+    std::string id_model = "DOSBox-X Virtual CD-ROM";
     unsigned char drive_index;
     CDROM_Interface *getMSCDEXDrive();
     void update_from_cdrom();
@@ -247,49 +258,59 @@ public:
     virtual void mode_sense();
     virtual void read_toc();
 public:
-    bool atapi_to_host;         /* if set, PACKET data transfer is to be read by host */
-    double spinup_time;
-    double spindown_timeout;
-    double cd_insertion_time;
-    Bitu host_maximum_byte_count;       /* host maximum byte count during PACKET transfer */
-    std::string id_mmc_vendor_id;
-    std::string id_mmc_product_id;
-    std::string id_mmc_product_rev;
-    Bitu LBA,TransferLength;
-    int loading_mode;
-    bool has_changed;
+    bool atapi_to_host = false;       /* if set, PACKET data transfer is to be read by host */
+    double spinup_time = 1000;        /* drive takes 1 second to spin up from idle */
+    double spindown_timeout = 10000;  /* drive spins down automatically after 10 seconds */
+    double cd_insertion_time = 4000;  /* a quick user that can switch CDs in 4 seconds */
+    Bitu host_maximum_byte_count = 0; /* host maximum byte count during PACKET transfer */
+
+    /* INQUIRY strings */
+    std::string id_mmc_vendor_id = "DOSBox-X";
+    std::string id_mmc_product_id = "Virtual CD-ROM";
+    std::string id_mmc_product_rev = "0.83-X";
+    Bitu LBA = 0;
+    Bitu TransferLength = 0;
+    int loading_mode = LOAD_IDLE;
+    bool has_changed = false;
+
 public:
-    unsigned char sense[256];
-    Bitu sense_length;
-    unsigned char atapi_cmd[12];
-    unsigned char atapi_cmd_i,atapi_cmd_total;
-    unsigned char sector[512*128];
-    Bitu sector_i,sector_total;
+    unsigned char sense[256] = {};
+    Bitu sense_length = 0;
+    unsigned char atapi_cmd[12] = {};
+    unsigned char atapi_cmd_i = 0;
+    unsigned char atapi_cmd_total = 0;
+    unsigned char sector[512 * 128] = {};
+    Bitu sector_i = 0;
+    Bitu sector_total = 0;
 };
 
 class IDEController:public Module_base{
 public:
-    int IRQ;
-    bool int13fakeio;       /* on certain INT 13h calls, force IDE state as if BIOS had carried them out */
-    bool int13fakev86io;        /* on certain INT 13h calls in virtual 8086 mode, trigger fake CPU I/O traps */
-    bool enable_pio32;      /* enable 32-bit PIO (if disabled, attempts at 32-bit PIO are handled as if two 16-bit I/O) */
-    bool ignore_pio32;      /* if 32-bit PIO enabled, but ignored, writes do nothing, reads return 0xFFFFFFFF */
-    bool register_pnp;
-    unsigned short alt_io;
-    unsigned short base_io;
-    unsigned char interface_index;
-    IO_ReadHandleObject ReadHandler[8],ReadHandlerAlt[2];
-    IO_WriteHandleObject WriteHandler[8],WriteHandlerAlt[2];
+    int IRQ = -1;
+    bool int13fakeio = false;    /* on certain INT 13h calls, force IDE state as if BIOS had carried them out */
+    bool int13fakev86io = false; /* on certain INT 13h calls in virtual 8086 mode, trigger fake CPU I/O traps */
+    bool enable_pio32 = false;   /* enable 32-bit PIO (if disabled, attempts at 32-bit PIO are handled as if two 16-bit I/O) */
+    bool ignore_pio32 = false;   /* if 32-bit PIO enabled, but ignored, writes do nothing, reads return 0xFFFFFFFF */
+    bool register_pnp = false;
+    unsigned short alt_io = 0;
+    unsigned short base_io = 0;
+    unsigned char interface_index = 0;
+    IO_ReadHandleObject ReadHandler[8] = {};
+    IO_ReadHandleObject ReadHandlerAlt[2] = {};
+    IO_WriteHandleObject WriteHandler[8] = {};
+    IO_WriteHandleObject WriteHandlerAlt[2] = {};
 public:
-    IDEDevice* device[2];       /* IDE devices (master, slave) */
-    Bitu select,status,drivehead;   /* which is selected, status register (0x1F7) but ONLY if no device exists at selection, drive/head register (0x1F6) */
-    bool interrupt_enable;      /* bit 1 of alt (0x3F6) */
-    bool host_reset;        /* bit 2 of alt */
-    bool irq_pending;
+    IDEDevice* device[2] = {nullptr, nullptr}; /* IDE devices (master, slave) */
+    Bitu select = 0;    /* which controller's selected */
+    Bitu status = 0;    /* status register (0x1F7) but ONLY if no device exists at selection */
+    Bitu drivehead = 0; /* drive/head register (0x1F6) */
+    bool interrupt_enable = false; /* bit 1 of alt (0x3F6) */
+    bool host_reset = false;  /* bit 2 of alt */
+    bool irq_pending = false;
     /* defaults for CD-ROM emulation */
-    double spinup_time;
-    double spindown_timeout;
-    double cd_insertion_time;
+    double spinup_time = 0;
+    double spindown_timeout = 0;
+    double cd_insertion_time = 0;
 public:
     IDEController(Section* configuration,unsigned char index);
     IDEController(const IDEController& other) = delete; // prevent copying
@@ -1244,44 +1265,26 @@ void IDEATAPICDROMDevice::set_sense(unsigned char SK,unsigned char ASC,unsigned 
     sense[13] = ASCQ;
 }
 
-IDEATAPICDROMDevice::IDEATAPICDROMDevice(IDEController *c,unsigned char drive_index) : IDEDevice(c) {
-    this->drive_index = drive_index;
-    sector_i = sector_total = 0;
-    atapi_to_host = false;
-    host_maximum_byte_count = 0;
-    LBA = 0;
-    TransferLength = 0;
-    memset(atapi_cmd, 0, sizeof(atapi_cmd));
-    atapi_cmd_i = 0;
-    atapi_cmd_total = 0;
-    memset(sector, 0, sizeof(sector));
-
-    memset(sense,0,sizeof(sense));
+IDEATAPICDROMDevice::IDEATAPICDROMDevice(IDEController *c, unsigned char index)
+        : IDEDevice(c),
+          drive_index(index)
+{
     IDEATAPICDROMDevice::set_sense(/*SK=*/0);
 
-    /* FIXME: Spinup/down times should be dosbox.conf configurable, if the DOSBox gamers
-     *        care more about loading times than emulation accuracy. */
-    cd_insertion_time = 4000; /* a quick user that can switch CDs in 4 seconds */
-    if (c->cd_insertion_time > 0) cd_insertion_time = c->cd_insertion_time;
+    /* FIXME: Spinup/down times should be dosbox.conf configurable, if the
+     * DOSBox gamers care more about loading times than emulation accuracy. */
+    assert(c);
+    if (c->cd_insertion_time > 0)
+        cd_insertion_time = c->cd_insertion_time;
 
-    spinup_time = 1000; /* drive takes 1 second to spin up from idle */
-    if (c->spinup_time > 0) spinup_time = c->spinup_time;
+    if (c->spinup_time > 0)
+        spinup_time = c->spinup_time;
 
-    spindown_timeout = 10000; /* drive spins down automatically after 10 seconds */
-    if (c->spindown_timeout > 0) spindown_timeout = c->spindown_timeout;
-
-    loading_mode = LOAD_IDLE;
-    has_changed = false;
+    if (c->spindown_timeout > 0)
+        spindown_timeout = c->spindown_timeout;
 
     type = IDE_TYPE_CDROM;
-    id_serial = "123456789";
-    id_firmware_rev = "0.83-X";
-    id_model = "DOSBox-X Virtual CD-ROM";
 
-    /* INQUIRY strings */
-    id_mmc_vendor_id = "DOSBox-X";
-    id_mmc_product_id = "Virtual CD-ROM";
-    id_mmc_product_rev = "0.83-X";
 }
 
 IDEATAPICDROMDevice::~IDEATAPICDROMDevice() {
@@ -2085,21 +2088,8 @@ void IDEATADevice::generate_identify_device() {
 }
 
 IDEATADevice::IDEATADevice(IDEController *c,unsigned char disk_index)
-    : IDEDevice(c), id_serial("8086"), id_firmware_rev("8086"), id_model("DOSBox IDE disk"), bios_disk_index(disk_index) {
-    sector_i = sector_total = 0;
-
-    headshr = 0;
+    : IDEDevice(c),  bios_disk_index(disk_index) {
     type = IDE_TYPE_HDD;
-    multiple_sector_max = sizeof(sector) / 512;
-    multiple_sector_count = 1;
-    geo_translate = false;
-    heads = 0;
-    sects = 0;
-    cyls = 0;
-    progress_count = 0;
-    phys_heads = 0;
-    phys_sects = 0;
-    phys_cyls = 0;
 }
 
 IDEATADevice::~IDEATADevice() {
@@ -3602,25 +3592,9 @@ void IDEDevice::select(uint8_t ndh,bool switched_to) {
 
 IDEController::IDEController(Section* configuration,unsigned char index):Module_base(configuration){
     Section_prop * section=static_cast<Section_prop *>(configuration);
+    assert(section);
+
     int i;
-
-    spinup_time = 0;
-    spindown_timeout = 0;
-    cd_insertion_time = 0;
-
-    status = 0x00;
-    host_reset = false;
-    irq_pending = false;
-    interrupt_enable = true;
-    interface_index = index;
-    device[0] = NULL;
-    device[1] = NULL;
-    base_io = 0;
-    select = 0;
-    alt_io = 0;
-    IRQ = -1;
-    drivehead = 0;
-
     i = section->Get_int("irq");
     if (i > 0 && i <= 15) IRQ = i;
 
@@ -3919,10 +3893,10 @@ static void IDE_Init(Section* sec,unsigned char ide_interface) {
     if (!section->Get_bool("enable"))
         return;
 
-	if (!init_ide) {
-		sec->AddDestroyFunction(&IDE_Destroy);
-		init_ide = 1;
-	}
+    if (!init_ide) {
+        sec->AddDestroyFunction(&IDE_Destroy);
+        init_ide = 1;
+    }
 
     if (idecontroller[ide_interface] != NULL) {
         delete idecontroller[ide_interface];
