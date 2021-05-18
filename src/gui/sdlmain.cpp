@@ -24,6 +24,7 @@
 #include <array>
 #include <cassert>
 #include <cerrno>
+#include <chrono>
 #include <cstdlib>
 #include <string.h>
 #include <stdio.h>
@@ -592,14 +593,30 @@ check_surface:
 	return flags;
 }
 
+// The frame-period holds the current duration for which a single host
+// video-frame is displayed. This is kept up-to-date when the video mode is set.
+// A sane starting value is used, which is based on a 60-Hz monitor.
+auto frame_period = std::chrono::nanoseconds(1000000000 / 60);
+static void UpdateFramePeriod()
+{
+	assert(sdl.window);
+	SDL_DisplayMode display_mode;
+	SDL_GetWindowDisplayMode(sdl.window, &display_mode);
+	const int refresh_rate = display_mode.refresh_rate > 0
+	                                 ? display_mode.refresh_rate
+	                                 : 60;
+	frame_period = std::chrono::nanoseconds(1000000000 / refresh_rate);
+}
 
 void GFX_ResetScreen(void) {
 	GFX_Stop();
 	if (sdl.draw.callback)
 		(sdl.draw.callback)( GFX_CallBackReset );
 	GFX_Start();
+	UpdateFramePeriod();
 	CPU_Reset_AutoAdjust();
 }
+
 
 void GFX_ForceFullscreenExit()
 {
@@ -2440,13 +2457,6 @@ bool GFX_IsFullscreen(void) {
 	return sdl.desktop.fullscreen;
 }
 
-#if defined(MACOSX)
-#define DB_POLLSKIP 3
-#else
-//Not used yet, see comment below
-#define DB_POLLSKIP 1
-#endif
-
 static void HandleVideoResize(int width, int height)
 {
 	/* Maybe a screen rotation has just occurred, so we simply resize.
@@ -2534,33 +2544,13 @@ static void FinalizeWindowState()
 	GFX_ResetScreen();
 }
 
-bool GFX_Events()
+static bool ProcessEvents()
 {
-#if defined(MACOSX)
-	// Don't poll too often. This can be heavy on the OS, especially Macs.
-	// In idle mode 3000-4000 polls are done per second without this check.
-	// Macs, with this code,  max 250 polls per second. (non-macs unused
-	// default max 500). Currently not implemented for all platforms, given
-	// the ALT-TAB stuff for WIN32.
-	static int last_check = 0;
-	int current_check = GetTicks();
-	if (current_check - last_check <= DB_POLLSKIP)
-		return true;
-	last_check = current_check;
-#endif
-
 	SDL_Event event;
-#if defined (REDUCE_JOYSTICK_POLLING)
 	if (MAPPER_IsUsingJoysticks()) {
-		static int poll_delay = 0;
-		int time = GetTicks();
-		if (time - poll_delay > 20) {
-			poll_delay = time;
-			SDL_JoystickUpdate();
-			MAPPER_UpdateJoysticks();
-		}
+		SDL_JoystickUpdate();
+		MAPPER_UpdateJoysticks();
 	}
-#endif
 	while (SDL_PollEvent(&event)) {
 		switch (event.type) {
 		case SDL_WINDOWEVENT:
@@ -2783,8 +2773,42 @@ bool GFX_Events()
 	return !exit_requested;
 }
 
-#if defined (WIN32)
-static BOOL WINAPI ConsoleEventHandler(DWORD event) {
+// This function processes events just prior to the next frame period. The host
+// processing lag is measured and accounted for in the next pass.
+
+// Some modern (and very fast) systems experience unknown lag; in many cases
+// this is caused by host-event polling. Comment-in the REPORT_EVENT_LAG define
+// to have this function report excessive host lag. Typically process should be
+// well under 1 millisecond, however some hosts report lag in the tens to
+// hundereds of milliseconds.
+
+// #define REPORT_EVENT_LAG
+bool GFX_MaybeProcessEvents()
+{
+	static auto next_render_at = std::chrono::steady_clock::now() + frame_period;
+	const auto checked_at = std::chrono::steady_clock::now();
+	if (checked_at < next_render_at)
+		return true;
+
+	const bool process_result = ProcessEvents();
+	const auto rendered_at = std::chrono::steady_clock::now();
+	const auto host_lag = rendered_at - checked_at;
+	next_render_at = rendered_at + frame_period - host_lag;
+
+#if defined(REPORT_EVENT_LAG)
+	if (host_lag > std::chrono::milliseconds(3)) {
+		const auto host_lag_us =
+		        std::chrono::duration_cast<std::chrono::microseconds>(host_lag)
+		                .count();
+		LOG_MSG("SDL: Host polling took %.2f ms", host_lag_us / 1000.0);
+	}
+#endif
+	return process_result;
+}
+
+#if defined(WIN32)
+static BOOL WINAPI ConsoleEventHandler(DWORD event)
+{
 	switch (event) {
 	case CTRL_SHUTDOWN_EVENT:
 	case CTRL_LOGOFF_EVENT:
@@ -2798,7 +2822,6 @@ static BOOL WINAPI ConsoleEventHandler(DWORD event) {
 	}
 }
 #endif
-
 
 /* static variable to show wether there is not a valid stdout.
  * Fixes some bugs when -noconsole is used in a read only directory */
