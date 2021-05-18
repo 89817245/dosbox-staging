@@ -59,6 +59,7 @@ differences between OPL2 and OPL3 shown in datasheets:
 #include "emu.h"
 #include "ymf262.h"
 
+#include <cassert>
 
 /* output final shift */
 #if (OPL3_SAMPLE_BITS==16)
@@ -886,7 +887,8 @@ static inline signed int op_calc(uint32_t phase, unsigned int env, signed int pm
 {
 	uint32_t p;
 
-	p = (env<<4) + sin_tab[wave_tab + ((((signed int)((phase & ~FREQ_MASK) + (pm<<16))) >> FREQ_SH) & SIN_MASK) ];
+	constexpr int freq_sh_scalar = 1 << FREQ_SH;
+	p = (env<<4) + sin_tab[wave_tab + ((((signed int)((phase & ~FREQ_MASK) + pm * freq_sh_scalar)) >> FREQ_SH) & SIN_MASK) ];
 
 	if (p >= TL_TAB_LEN)
 		return 0;
@@ -928,7 +930,8 @@ static inline void chan_calc(OPL3 *chip, OPL3_CH *CH)
 	{
 		if (!SLOT->FB)
 			out = 0;
-		SLOT->op1_out[1] = op_calc1(SLOT->Cnt, env, (out<<SLOT->FB), SLOT->wavetable);
+		const auto pm = static_cast<uint32_t>(out) << SLOT->FB;
+		SLOT->op1_out[1] = op_calc1(SLOT->Cnt, env, static_cast<int32_t>(pm), SLOT->wavetable);
 	}
 	if (SLOT->connect) {
 		*SLOT->connect += SLOT->op1_out[1];
@@ -1037,7 +1040,8 @@ static inline void chan_calc_rhythm(OPL3 *chip, OPL3_CH *CH, unsigned int noise)
 	{
 		if (!SLOT->FB)
 			out = 0;
-		SLOT->op1_out[1] = op_calc1(SLOT->Cnt, env, (out<<SLOT->FB), SLOT->wavetable);
+		const auto pm = static_cast<uint32_t>(out) << SLOT->FB;
+		SLOT->op1_out[1] = op_calc1(SLOT->Cnt, env, static_cast<int32_t>(pm), SLOT->wavetable);
 	}
 
 	/* SLOT 2 */
@@ -1330,15 +1334,6 @@ static int init_tables(void)
 
 	return 1;
 }
-
-static void OPLCloseTable(void)
-{
-#ifdef SAVE_SAMPLE
-	fclose(sample[0]);
-#endif
-}
-
-
 
 static void OPL3_initalize(OPL3 *chip)
 {
@@ -1785,7 +1780,8 @@ static void OPL3WriteReg(OPL3 *chip, int r, int v)
 		break;
 
 		default:
-			chip->device->logerror("YMF262: write to unknown register: %02x value=%02x\n",r,v);
+			if (chip->device)
+				chip->device->logerror("YMF262: write to unknown register: %02x value=%02x\n",r,v);
 		break;
 		}
 		break;
@@ -2283,33 +2279,6 @@ static void OPL3WriteReg(OPL3 *chip, int r, int v)
 	}
 }
 
-/* lock/unlock for common table */
-static int OPL3_LockTable(device_t *device)
-{
-	num_lock++;
-	if (num_lock > 1) {
-		return 0;
-	}
-
-	/* first time */
-
-	if (init_tables()) {
-		num_lock--;
-		return -1;
-	}
-
-	return 0;
-}
-
-static void OPL3_UnLockTable(void)
-{
-	if (num_lock) num_lock--;
-	if (num_lock) return;
-
-	/* last time */
-	OPLCloseTable();
-}
-
 static void OPL3ResetChip(OPL3 *chip)
 {
 	int c,s;
@@ -2357,18 +2326,16 @@ static void OPL3ResetChip(OPL3 *chip)
 /* 'rate'  is sampling rate  */
 static OPL3 *OPL3Create(device_t *device, int clock, int rate, int type)
 {
-	// Guard
-	if (device == nullptr) {
-		return nullptr;
-	}
-	OPL3 *chip;
+	// The MAME device type has been stubbed out, therefore we
+	// expect and assume it's a nullptr (and confirm it here)
+	assert(device == nullptr);
 
-	if (OPL3_LockTable(device) == -1) {
-		return nullptr;
-	}
+	OPL3 *chip = nullptr;
+
+	init_tables();
 
 	/* allocate memory block */
-	chip = auto_alloc_clear(device->machine(), OPL3);
+	chip = auto_alloc_clear(device, OPL3);
 	if (chip == nullptr) {
 		device->logerror("Could not allocate memory for OPL3 chip");
 		return nullptr;
@@ -2390,8 +2357,11 @@ static OPL3 *OPL3Create(device_t *device, int clock, int rate, int type)
 /* Destroy one of virtual YMF262 */
 static void OPL3Destroy(OPL3 *chip)
 {
-	OPL3_UnLockTable();
-	auto_free(chip->device->machine(), chip);
+	if (!chip)
+		return;
+
+	free(chip);
+	chip = nullptr;
 }
 
 
