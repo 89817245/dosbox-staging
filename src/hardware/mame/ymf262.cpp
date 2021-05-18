@@ -2353,8 +2353,11 @@ static OPL3 *OPL3Create(device_t *device, int clock, int rate, int type)
 /* Destroy one of virtual YMF262 */
 static void OPL3Destroy(OPL3 *chip)
 {
-	if (chip)
-		auto_free(chip->device->machine(), chip);
+	if (!chip)
+		return;
+
+	free(chip);
+	chip = nullptr;
 }
 
 
