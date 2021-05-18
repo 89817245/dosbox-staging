@@ -887,7 +887,8 @@ static inline signed int op_calc(uint32_t phase, unsigned int env, signed int pm
 {
 	uint32_t p;
 
-	p = (env<<4) + sin_tab[wave_tab + ((((signed int)((phase & ~FREQ_MASK) + (pm<<16))) >> FREQ_SH) & SIN_MASK) ];
+	constexpr int freq_sh_scalar = 1 << FREQ_SH;
+	p = (env<<4) + sin_tab[wave_tab + ((((signed int)((phase & ~FREQ_MASK) + pm * freq_sh_scalar)) >> FREQ_SH) & SIN_MASK) ];
 
 	if (p >= TL_TAB_LEN)
 		return 0;
