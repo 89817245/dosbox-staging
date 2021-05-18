@@ -261,7 +261,6 @@ static Bitu cmos_readreg(Bitu /*port*/,Bitu /*iolen*/) {
 	case 0x3a:
 		return 0;
 
-
 	case 0x0b:		/* Status register B */
 	case 0x0d:		/* Status register D */
 	case 0x0f:		/* Shutdown status byte */
