@@ -930,7 +930,8 @@ static inline void chan_calc(OPL3 *chip, OPL3_CH *CH)
 	{
 		if (!SLOT->FB)
 			out = 0;
-		SLOT->op1_out[1] = op_calc1(SLOT->Cnt, env, (out<<SLOT->FB), SLOT->wavetable);
+		const auto pm = static_cast<uint32_t>(out) << SLOT->FB;
+		SLOT->op1_out[1] = op_calc1(SLOT->Cnt, env, static_cast<int32_t>(pm), SLOT->wavetable);
 	}
 	if (SLOT->connect) {
 		*SLOT->connect += SLOT->op1_out[1];
@@ -1039,7 +1040,8 @@ static inline void chan_calc_rhythm(OPL3 *chip, OPL3_CH *CH, unsigned int noise)
 	{
 		if (!SLOT->FB)
 			out = 0;
-		SLOT->op1_out[1] = op_calc1(SLOT->Cnt, env, (out<<SLOT->FB), SLOT->wavetable);
+		const auto pm = static_cast<uint32_t>(out) << SLOT->FB;
+		SLOT->op1_out[1] = op_calc1(SLOT->Cnt, env, static_cast<int32_t>(pm), SLOT->wavetable);
 	}
 
 	/* SLOT 2 */
