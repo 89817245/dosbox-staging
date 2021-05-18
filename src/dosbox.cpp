@@ -98,7 +98,7 @@ void SBLASTER_Init(Section*);
 void MPU401_Init(Section*);
 void PCSPEAKER_Init(Section*);
 void TANDYSOUND_Init(Section*);
-void DISNEY_Init(Section*);
+void DISNEY_Init(Section *);
 void SERIAL_Init(Section*);
 
 
@@ -740,6 +740,9 @@ void DOSBOX_Init(void) {
 
 	// Configure Gravis UltraSound emulation
 	GUS_AddConfigSection(control);
+
+	// Configure Innovation SSI-2001 emulation
+	INNOVATION_AddConfigSection(control);
 
 	secprop = control->AddSection_prop("speaker",&PCSPEAKER_Init,true);//done
 	Pbool = secprop->Add_bool("pcspeaker",Property::Changeable::WhenIdle,true);
