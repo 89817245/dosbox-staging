@@ -55,11 +55,10 @@ differences between OPL2 and OPL3 shown in datasheets:
 
 
 */
+#include "support.h"
 
 #include "emu.h"
 #include "ymf262.h"
-
-#include <cassert>
 
 /* output final shift */
 #if (OPL3_SAMPLE_BITS==16)
@@ -618,9 +617,6 @@ static const int8_t lfo_pm_table[8*8*2] = {
 };
 
 
-/* lock level of common table */
-static int num_lock = 0;
-
 /* work table */
 #define SLOT7_1 (&chip->P_CH[7].SLOT[SLOT1])
 #define SLOT7_2 (&chip->P_CH[7].SLOT[SLOT2])
@@ -887,8 +883,10 @@ static inline signed int op_calc(uint32_t phase, unsigned int env, signed int pm
 {
 	uint32_t p;
 
-	constexpr int freq_sh_scalar = 1 << FREQ_SH;
-	p = (env<<4) + sin_tab[wave_tab + ((((signed int)((phase & ~FREQ_MASK) + pm * freq_sh_scalar)) >> FREQ_SH) & SIN_MASK) ];
+	const auto pm_shifted = left_shift_signed(pm, 16);
+	p = (env << 4) +
+	    sin_tab[wave_tab + ((((signed int)((phase & ~FREQ_MASK) + pm_shifted)) >> FREQ_SH) &
+	                        SIN_MASK)];
 
 	if (p >= TL_TAB_LEN)
 		return 0;
@@ -930,8 +928,9 @@ static inline void chan_calc(OPL3 *chip, OPL3_CH *CH)
 	{
 		if (!SLOT->FB)
 			out = 0;
-		const auto pm = static_cast<uint32_t>(out) << SLOT->FB;
-		SLOT->op1_out[1] = op_calc1(SLOT->Cnt, env, static_cast<int32_t>(pm), SLOT->wavetable);
+		const auto out_shifted = left_shift_signed(out, SLOT->FB);
+		SLOT->op1_out[1] = op_calc1(SLOT->Cnt, env, out_shifted,
+		                            SLOT->wavetable);
 	}
 	if (SLOT->connect) {
 		*SLOT->connect += SLOT->op1_out[1];
@@ -1040,8 +1039,9 @@ static inline void chan_calc_rhythm(OPL3 *chip, OPL3_CH *CH, unsigned int noise)
 	{
 		if (!SLOT->FB)
 			out = 0;
-		const auto pm = static_cast<uint32_t>(out) << SLOT->FB;
-		SLOT->op1_out[1] = op_calc1(SLOT->Cnt, env, static_cast<int32_t>(pm), SLOT->wavetable);
+		const auto out_shifted = left_shift_signed(out, SLOT->FB);
+		SLOT->op1_out[1] = op_calc1(SLOT->Cnt, env, out_shifted,
+		                            SLOT->wavetable);
 	}
 
 	/* SLOT 2 */
