@@ -20,9 +20,11 @@
 
 #include "support.h"
 
+#include <cstdint>
 #include <gtest/gtest.h>
 
 #include <string>
+#include <sys/types.h>
 
 namespace {
 
@@ -155,6 +157,111 @@ TEST(Support_split, Empty)
 	EXPECT_EQ(split(""), empty);
 	EXPECT_EQ(split(" "), empty);
 	EXPECT_EQ(split("   "), empty);
+}
+
+TEST(Support_left_shift_signed, PositiveValid)
+{
+	// shifting zero ...
+	int8_t val_8bit = 0;
+	int16_t val_16bit = 0;
+	int32_t val_32bit = 0;
+	// by zero
+	EXPECT_EQ(left_shift_signed(val_8bit, 0), 0);
+	EXPECT_EQ(left_shift_signed(val_16bit, 0), 0);
+	EXPECT_EQ(left_shift_signed(val_32bit, 0), 0);
+
+	// shifting one ...
+	val_8bit = 1;
+	val_16bit = 1;
+	val_32bit = 1;
+
+	// by four
+	EXPECT_EQ(left_shift_signed(val_8bit, 4), 16);
+	EXPECT_EQ(left_shift_signed(val_16bit, 4), 16);
+	EXPECT_EQ(left_shift_signed(val_32bit, 4), 16);
+
+	// by max signed bits
+	EXPECT_EQ(left_shift_signed(val_8bit, 6), 64);
+	EXPECT_EQ(left_shift_signed(val_16bit, 14), 16384);
+	EXPECT_EQ(left_shift_signed(val_32bit, 30), 1073741824);
+
+	// max shiftable value before overflow
+	val_8bit = INT8_MAX / 2;
+	val_16bit = INT16_MAX / 2;
+	val_32bit = INT32_MAX / 2;
+
+	EXPECT_EQ(left_shift_signed(val_8bit, 1), INT8_MAX - 1);
+	EXPECT_EQ(left_shift_signed(val_16bit, 1), INT16_MAX - 1);
+	EXPECT_EQ(left_shift_signed(val_32bit, 1), INT32_MAX - 1);
+}
+
+TEST(Support_left_shift_signed, NegativeValid)
+{
+	// shifting negative one ...
+	int8_t val_8bit = -1;
+	int16_t val_16bit = -1;
+	int32_t val_32bit = -1;
+
+	// by four
+	EXPECT_EQ(left_shift_signed(val_8bit, 4), -16);
+	EXPECT_EQ(left_shift_signed(val_16bit, 4), -16);
+	EXPECT_EQ(left_shift_signed(val_32bit, 4), -16);
+
+	// by max signed bits
+	EXPECT_EQ(left_shift_signed(val_8bit, 7), INT8_MIN);
+	EXPECT_EQ(left_shift_signed(val_16bit, 15), INT16_MIN);
+	EXPECT_EQ(left_shift_signed(val_32bit, 31), INT32_MIN);
+
+	// max shiftable value before overflow
+	val_8bit = INT8_MIN / 2;
+	val_16bit = INT16_MIN / 2;
+	val_32bit = INT32_MIN / 2;
+
+	EXPECT_EQ(left_shift_signed(val_8bit, 1), INT8_MIN);
+	EXPECT_EQ(left_shift_signed(val_16bit, 1), INT16_MIN);
+	EXPECT_EQ(left_shift_signed(val_32bit, 1), INT32_MIN);
+}
+
+TEST(Support_left_shift_signed, Invalid)
+{
+	// Overflow (positive)
+	int8_t val_8bit = INT8_MAX;
+	int16_t val_16bit = INT16_MAX;
+	int32_t val_32bit = INT32_MAX;
+
+	EXPECT_DEBUG_DEATH({ left_shift_signed(val_8bit, 1); }, "");
+	EXPECT_DEBUG_DEATH({ left_shift_signed(val_16bit, 1); }, "");
+	EXPECT_DEBUG_DEATH({ left_shift_signed(val_32bit, 1); }, "");
+
+	val_8bit = 1;
+	val_16bit = 1;
+	val_32bit = 1;
+
+	EXPECT_DEBUG_DEATH({ left_shift_signed(val_8bit, 7); }, "");
+	EXPECT_DEBUG_DEATH({ left_shift_signed(val_16bit, 15); }, "");
+	EXPECT_DEBUG_DEATH({ left_shift_signed(val_32bit, 31); }, "");
+
+	// Overflow (negative)
+	val_8bit = INT8_MIN;
+	val_16bit = INT16_MIN;
+	val_32bit = INT32_MIN;
+
+	EXPECT_DEBUG_DEATH({ left_shift_signed(val_8bit, 1); }, "");
+	EXPECT_DEBUG_DEATH({ left_shift_signed(val_16bit, 1); }, "");
+	EXPECT_DEBUG_DEATH({ left_shift_signed(val_32bit, 1); }, "");
+
+	val_8bit = -1;
+	val_16bit = -1;
+	val_32bit = -1;
+
+	EXPECT_DEBUG_DEATH({ left_shift_signed(val_8bit, 8); }, "");
+	EXPECT_DEBUG_DEATH({ left_shift_signed(val_16bit, 16); }, "");
+	EXPECT_DEBUG_DEATH({ left_shift_signed(val_32bit, 32); }, "");
+
+	// Shift a negative number of bits
+	EXPECT_DEBUG_DEATH({ left_shift_signed(val_8bit, -1); }, "");
+	EXPECT_DEBUG_DEATH({ left_shift_signed(val_16bit, -100); }, "");
+	EXPECT_DEBUG_DEATH({ left_shift_signed(val_32bit, -10000); }, "");
 }
 
 } // namespace

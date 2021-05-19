@@ -105,6 +105,21 @@ inline int iround(double x) {
 	return static_cast<int>(round(x));
 }
 
+template <typename T1, typename T2>
+constexpr T1 left_shift_signed(T1 value, T2 amount)
+{
+	static_assert(std::is_signed<T1>::value, "First parameter should be signed");
+	assert(amount >= 0);
+
+	const auto shifted = static_cast<uint64_t>(value) << amount;
+
+	// detect rollover at either edge
+	assert(static_cast<int64_t>(shifted) <= (std::numeric_limits<T1>::max)());
+	assert(static_cast<int64_t>(shifted) >= (std::numeric_limits<T1>::min)());
+
+	return static_cast<T1>(shifted);
+}
+
 // Include a message in assert, similar to static_assert:
 #define assertm(exp, msg) assert(((void)msg, exp))
 // Use (void) to silent unused warnings.
