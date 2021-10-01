@@ -19,18 +19,21 @@
 #include "shell.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <iterator>
+#include <regex>
 
 #include "regs.h"
 #include "callback.h"
 #include "string_utils.h"
 
+unsigned int result_errorcode = 0;
+
 DOS_Shell::~DOS_Shell() {
-	delete bf;
-	bf = nullptr;
+	bf.reset();
 }
 
 void DOS_Shell::ShowPrompt(void) {
@@ -60,7 +63,7 @@ void DOS_Shell::InputCommand(char * line) {
 
 	std::list<std::string>::iterator it_history = l_history.begin(), it_completion = l_completion.begin();
 
-	while (size && !exit_requested) {
+	while (size && !shutdown_requested) {
 		dos.echo=false;
 		while(!DOS_ReadFile(input_handle,&c,&n)) {
 			Bit16u dummy;
@@ -384,6 +387,47 @@ void DOS_Shell::InputCommand(char * line) {
 	// add command line to history
 	l_history.push_front(line); it_history = l_history.begin();
 	if (l_completion.size()) l_completion.clear();
+
+	/* DOS %variable% substitution */
+	ProcessCmdLineEnvVarStitution(line);
+}
+
+/* Note: Buffer pointed to by "line" must be at least CMD_MAXLINE+1 bytes long! */
+void DOS_Shell::ProcessCmdLineEnvVarStitution(char* line) {
+	constexpr char surrogate_percent = 8;
+	const static std::regex re("\\%([^%0-9][^%]*)?%");
+	std::string text = line;
+	std::smatch match;
+	/* Iterate over potential %var1%, %var2%, etc matches found in the text string */
+	while (std::regex_search(text, match, re)) {
+		// Get the first matching %'s position and length
+		const auto percent_pos = static_cast<size_t>(match.position(0));
+		const auto percent_len = static_cast<size_t>(match.length(0));
+
+		std::string variable_name = match[1].str();
+		if (variable_name.empty()) {
+			/* Replace %% with the character "surrogate_percent", then (eventually) % */
+			text.replace(percent_pos, percent_len,
+			             std::string(1, surrogate_percent));
+			continue;
+		}
+		/* Trim preceding spaces from the variable name */
+		variable_name.erase(0, variable_name.find_first_not_of(' '));
+		std::string variable_value;
+		if (variable_name.size() && GetEnvStr(variable_name.c_str(), variable_value)) {
+			const size_t equal_pos = variable_value.find_first_of('=');
+			/* Replace the original %var% with its corresponding value from the environment */
+			const std::string replacement = equal_pos != std::string::npos
+			                ? variable_value.substr(equal_pos + 1) : "";
+			text.replace(percent_pos, percent_len, replacement);
+		}
+		else {
+			text.replace(percent_pos, percent_len, "");
+		}
+	}
+	std::replace(text.begin(), text.end(), surrogate_percent, '%');
+	assert(text.size() <= CMD_MAXLINE);
+	safe_strncpy(line, text.c_str(), CMD_MAXLINE);
 }
 
 std::string full_arguments = "";
@@ -427,7 +471,7 @@ bool DOS_Shell::Execute(char * name,char * args) {
 	const char *extension = strrchr(fullname, '.');
 	if (!extension) {
 		// Check if the result will fit in the parameters.
-		if (strlen(fullname) > (DOS_PATHLENGTH - 1))
+		if (safe_strlen(fullname) > (DOS_PATHLENGTH - 1))
 			return false;
 
 		// Try to add .COM, .EXE and .BAT extensions to the filename
@@ -450,9 +494,10 @@ bool DOS_Shell::Execute(char * name,char * args) {
 	{	/* Run the .bat file */
 		/* delete old batch file if call is not active*/
 		bool temp_echo=echo; /*keep the current echostate (as delete bf might change it )*/
-		if(bf && !call) delete bf;
-		bf=new BatchFile(this,fullname,name,line);
-		echo=temp_echo; //restore it.
+		if (bf && !call)
+			bf.reset();
+		bf = std::make_shared<BatchFile>(this, fullname, name, line);
+		echo = temp_echo; // restore it.
 	} 
 	else 
 	{	/* only .bat .exe .com extensions maybe be executed by the shell */
@@ -468,7 +513,8 @@ bool DOS_Shell::Execute(char * name,char * args) {
 		block.Clear();
 		//Add a filename
 		RealPt file_name=RealMakeSeg(ss,reg_sp+0x20);
-		MEM_BlockWrite(Real2Phys(file_name),fullname,(Bitu)(strlen(fullname)+1));
+		MEM_BlockWrite(Real2Phys(file_name), fullname,
+		               (Bitu)(safe_strlen(fullname) + 1));
 
 		/* HACK: Store full commandline for mount and imgmount */
 		full_arguments.assign(line);
@@ -477,7 +523,8 @@ bool DOS_Shell::Execute(char * name,char * args) {
 		CommandTail cmdtail;
 		cmdtail.count = 0;
 		memset(&cmdtail.buffer,0,127); //Else some part of the string is unitialized (valgrind)
-		if (strlen(line)>126) line[126]=0;
+		if (safe_strlen(line) > 126)
+			line[126] = 0;
 		cmdtail.count=(Bit8u)strlen(line);
 		memcpy(cmdtail.buffer,line,strlen(line));
 		cmdtail.buffer[strlen(line)]=0xd;
@@ -534,6 +581,7 @@ bool DOS_Shell::Execute(char * name,char * args) {
 		SegSet16(cs,RealSeg(newcsip));
 		reg_ip=RealOff(newcsip);
 #endif
+		result_errorcode = 0;
 		/* Start up a dos execute interrupt */
 		reg_ax=0x4b00;
 		//Filename pointer
@@ -546,6 +594,8 @@ bool DOS_Shell::Execute(char * name,char * args) {
 		CALLBACK_RunRealInt(0x21);
 		/* Restore CS:IP and the stack */
 		reg_sp+=0x200;
+		if (result_errorcode)
+			dos.return_code = result_errorcode;
 #if 0
 		reg_eip=oldeip;
 		SegSet16(cs,oldcs);
@@ -603,7 +653,7 @@ const char *DOS_Shell::Which(const char *name) const
 
 
 		/* check entry */
-		if(size_t len = strlen(path)){
+		if (size_t len = safe_strlen(path)) {
 			if(len >= (DOS_PATHLENGTH - 2)) continue;
 
 			if(path[len - 1] != '\\') {

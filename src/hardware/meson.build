@@ -9,7 +9,9 @@ libhardware_sources = files([
   'gameblaster.cpp',
   'gus.cpp',
   'hardware.cpp',
+  'innovation.cpp',
   'iohandler.cpp',
+  'iohandler_containers.cpp',
   'ipx.cpp',
   'ipxserver.cpp',
   'joystick.cpp',
@@ -25,6 +27,7 @@ libhardware_sources = files([
   'ne2000.cpp',
   'pci_bus.cpp',
   'pcspeaker.cpp',
+  'ps1audio.cpp',
   'pic.cpp',
   'sblaster.cpp',
   'serialport/directserial.cpp',
@@ -55,13 +58,15 @@ libhardware_sources = files([
 libhardware = static_library('hardware', libhardware_sources,
                              include_directories : incdir,
                              dependencies : [
-                               libnuked_dep,
                                pcap_dep,
                                png_dep,
                                sdl2_dep,
                                sdl2_net_dep,
                                slirp_dep,
                                winsock2_dep,
+                               libloguru_dep,
+                               libnuked_dep,
+                               libresidfp_dep,
                              ])
 
 libhardware_dep = declare_dependency(link_with : libhardware)

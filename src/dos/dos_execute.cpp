@@ -16,17 +16,19 @@
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
+#include "dosbox.h"
 
 #include <string.h>
 #include <ctype.h>
-#include "dosbox.h"
-#include "mem.h"
-#include "dos_inc.h"
-#include "regs.h"
+
+#include "cpu.h"
 #include "callback.h"
 #include "debug.h"
-#include "cpu.h"
+#include "dos_inc.h"
+#include "mem.h"
 #include "programs.h"
+#include "regs.h"
+#include "string_utils.h"
 
 const char * RunningProgram="DOSBOX";
 
@@ -199,7 +201,7 @@ static bool MakeEnv(char * name,Bit16u * segment) {
 	envwrite+=2;
 	char namebuf[DOS_PATHLENGTH];
 	if (DOS_Canonicalize(name,namebuf)) {
-		MEM_BlockWrite(envwrite,namebuf,(Bitu)(strlen(namebuf)+1));
+		MEM_BlockWrite(envwrite,namebuf,(Bitu)(safe_strlen(namebuf)+1));
 		return true;
 	} else return false;
 }
@@ -423,6 +425,8 @@ bool DOS_Execute(char * name,PhysPt block_pt,Bit8u flags) {
 		csip=RealMake(loadseg+head.initCS,head.initIP);
 		sssp=RealMake(loadseg+head.initSS,head.initSP);
 		if (head.initSP<4) LOG(LOG_EXEC,LOG_ERROR)("stack underflow/wrap at EXEC");
+		if ((pspseg+memsize)<(loadseg+head.initSS+(head.initSP>>4)))
+			LOG(LOG_EXEC,LOG_ERROR)("stack outside memory block at EXEC");
 
 		Program::ResetLastWrittenChar('\0'); // triggers newline injection after DOS programs
 	}

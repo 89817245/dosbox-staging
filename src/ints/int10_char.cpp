@@ -339,9 +339,9 @@ void INT10_SetActivePage(Bit8u page) {
 
 void INT10_SetCursorShape(Bit8u first,Bit8u last) {
 	real_writew(BIOSMEM_SEG,BIOSMEM_CURSOR_TYPE,last|(first<<8));
-	if (!IS_EGAVGA_ARCH) goto dowrite;
+	if (machine==MCH_CGA || IS_TANDY_ARCH) goto dowrite;
 	/* Skip CGA cursor emulation if EGA/VGA system is active */
-	if (!(real_readb(BIOSMEM_SEG,BIOSMEM_VIDEO_CTL) & 0x8)) {
+	if (machine==MCH_HERC || !(real_readb(BIOSMEM_SEG,BIOSMEM_VIDEO_CTL) & 0x8)) {
 		/* Check for CGA type 01, invisible */
 		if ((first & 0x60) == 0x20) {
 			first=0x1e;
@@ -349,10 +349,10 @@ void INT10_SetCursorShape(Bit8u first,Bit8u last) {
 			goto dowrite;
 		}
 		/* Check if we need to convert CGA Bios cursor values */
-		if (!(real_readb(BIOSMEM_SEG,BIOSMEM_VIDEO_CTL) & 0x1)) { // set by int10 fun12 sub34
+		if (machine==MCH_HERC || !(real_readb(BIOSMEM_SEG,BIOSMEM_VIDEO_CTL) & 0x1)) { // set by int10 fun12 sub34
 //			if (CurMode->mode>0x3) goto dowrite;	//Only mode 0-3 are text modes on cga
 			if ((first & 0xe0) || (last & 0xe0)) goto dowrite;
-			Bit8u cheight=real_readb(BIOSMEM_SEG,BIOSMEM_CHAR_HEIGHT)-1;
+			Bit8u cheight=((machine==MCH_HERC)?14:real_readb(BIOSMEM_SEG,BIOSMEM_CHAR_HEIGHT))-1;
 			/* Creative routine i based of the original ibmvga bios */
 
 			if (last<first) {
@@ -450,21 +450,24 @@ void ReadCharAttr(Bit16u col,Bit16u row,Bit8u page,Bit16u * result) {
 		fontdata=Real2Phys(RealGetVec(0x43));
 		break;
 	}
+	const auto x = col * 8;
+	assert(x >= 0 && x <= UINT16_MAX);
 
-	Bitu x=col*8,y=row*cheight*(cols/CurMode->twidth);
+	const auto y = row * cheight * (cols / CurMode->twidth);
+	assert(y >= 0 && y <= UINT16_MAX);
 
 	for (Bit16u chr=0;chr<256;chr++) {
 
 		if (chr==128 && split_chr) fontdata=Real2Phys(RealGetVec(0x1f));
 
 		bool error=false;
-		Bit16u ty=(Bit16u)y;
+		auto ty = static_cast<uint16_t>(y);
 		for (Bit8u h=0;h<cheight;h++) {
 			Bit8u bitsel=128;
 			Bit8u bitline=mem_readb(fontdata++);
 			Bit8u res=0;
 			Bit8u vidline=0;
-			Bit16u tx=(Bit16u)x;
+			auto tx = static_cast<uint16_t>(x);
 			while (bitsel) {
 				//Construct bitline in memory
 				INT10_GetPixel(tx,ty,page,&res);
@@ -583,14 +586,18 @@ void WriteChar(Bit16u col,Bit16u row,Bit8u page,Bit8u chr,Bit8u attr,bool useatt
 		break;
 	}
 
-	Bitu x=col*8,y=row*cheight*(cols/CurMode->twidth);
+	const auto x = col * 8;
+	assert(x >= 0 && x <= UINT16_MAX);
 
-	Bit16u ty=(Bit16u)y;
-	for (Bit8u h=0;h<cheight;h++) {
+	const auto y = row * cheight * (cols / CurMode->twidth);
+	assert(y >= 0 && y <= UINT16_MAX);
+
+	auto ty = static_cast<uint16_t>(y);
+	for (Bit8u h = 0; h < cheight; h++) {
 		Bit8u bitsel=128;
 		Bit8u bitline=mem_readb(Real2Phys(fontdata));
 		fontdata=RealMake(RealSeg(fontdata),RealOff(fontdata)+1);
-		Bit16u tx=(Bit16u)x;
+		auto tx = static_cast<uint16_t>(x);
 		while (bitsel) {
 			INT10_PutPixel(tx,ty,page,(bitline&bitsel)?attr:back);
 			tx++;

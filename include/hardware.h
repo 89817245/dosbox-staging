@@ -40,7 +40,8 @@ void CMS_Init(Section* sec);
 void OPL_ShutDown(Section* sec);
 void CMS_ShutDown(Section* sec);
 
-bool SB_Get_Address(Bitu& sbaddr, Bitu& sbirq, Bitu& sbdma);
+bool PS1AUDIO_IsEnabled();
+bool SB_Get_Address(uint16_t &sbaddr, uint8_t &sbirq, uint8_t &sbdma);
 bool TS_Get_Address(Bitu& tsaddr, Bitu& tsirq, Bitu& tsdma);
 
 extern Bit8u adlib_commandreg;
@@ -57,5 +58,8 @@ void CAPTURE_VideoStop();
 class Config;
 // Gravis UltraSound configuration and initialization
 void GUS_AddConfigSection(Config *conf);
+
+// Innovation SSI-2001 configuration and initialization
+void INNOVATION_AddConfigSection(Config *conf);
 
 #endif

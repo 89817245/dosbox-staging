@@ -133,6 +133,7 @@ private:
 					}
 				} else if ((modrm&7)!=4 || (sib&7)!=5)
 					break;
+				FALLTHROUGH;
 			case 2:	cache_addd((Bit32u)offset); break;
 			case 1: cache_addb((Bit8u)offset); break;
 			}
@@ -286,6 +287,11 @@ static BlockReturn gen_runcodeInit(const Bit8u *code) {
 	cache.pos = &cache_code_link_blocks[128];
 	gen_runcode = (BlockReturn(*)(const Bit8u*))cache.pos;
 
+	auto cache_addr = static_cast<void *>(const_cast<uint8_t *>(cache.pos));
+	constexpr size_t cache_bytes = CACHE_MAXSIZE;
+
+	dyn_mem_write(cache_addr, cache_bytes);
+	
 	opcode(5).Emit8Reg(0x50);  // push rbp
 	opcode(15).Emit8Reg(0x50); // push r15
 	opcode(14).Emit8Reg(0x50); // push r14
@@ -335,6 +341,10 @@ static BlockReturn gen_runcodeInit(const Bit8u *code) {
 	opcode(15).Emit8Reg(0x58); // pop r15
 	opcode(5).Emit8Reg(0x58);  // pop rbp
 	cache_addb(0xc3);          // ret
+	
+	dyn_mem_execute(cache_addr, cache_bytes);
+	const auto cache_flush_bytes = static_cast<size_t>(cache.pos - oldpos);
+	dyn_cache_invalidate(cache_addr, cache_flush_bytes);
 
 	cache.pos = oldpos;
 	return gen_runcode(code);
@@ -544,7 +554,7 @@ static void gen_mov_host(void * data,DynReg * dr1,Bitu size,Bitu di1=0) {
 		op.setreg(idx,di1);
 		tmp = 0x8A; // mov r8, []
 		break;
-	case 2: op.setword(); // mov r16, []
+	case 2: op.setword(); FALLTHROUGH; // mov r16, []
 	case 4: op.setreg(idx);
 		tmp = 0x8B; // mov r32, []
 		break;
@@ -1274,6 +1284,12 @@ static void gen_dh_fpu_saveInit(void) {
 	gen_dh_fpu_save = (void(*)(void))cache.pos;
 
 	Bitu addr = (Bitu)&dyn_dh_fpu;
+	
+	auto cache_addr = static_cast<void *>(const_cast<uint8_t *>(cache.pos));
+	constexpr size_t cache_bytes = CACHE_MAXSIZE;
+
+	dyn_mem_write(cache_addr, cache_bytes);
+
 	// mov RAX, &dyn_dh_fpu
 	if ((Bit32u)addr == addr) opcode(0).setimm(addr,4).Emit8Reg(0xB8);
 	else opcode(0).set64().setimm(addr,8).Emit8Reg(0xB8);
@@ -1287,6 +1303,10 @@ static void gen_dh_fpu_saveInit(void) {
 	// or byte [dyn_dh_fpu.state.cw], 0x3F
 	opcode(1).setimm(0x3F,1).setea(0,-1,0,offsetof(struct dyn_dh_fpu,state.cw)).Emit8(0x80);
 	cache_addb(0xC3); // RET
+	
+	dyn_mem_execute(cache_addr, cache_bytes);
+	const auto cache_flush_bytes = static_cast<size_t>(cache.pos - oldpos);
+	dyn_cache_invalidate(cache_addr, cache_flush_bytes);
 
 	cache.pos = oldpos;
 	gen_dh_fpu_save();

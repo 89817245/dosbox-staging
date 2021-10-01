@@ -30,16 +30,19 @@
 #include "mame/emu.h"
 #include "mame/saa1099.h"
 
-#define MASTER_CLOCK 7159090
+// GameBlaster runs at half of ISA's clock speed (14318180 / 2)
+constexpr uint32_t GAMEBLASTER_CLOCK_HZ = 7159090;
+
 
 //My mixer channel
 static MixerChannel * cms_chan;
 //Timer to disable the channel after a while
 static Bit32u lastWriteTicks;
-static Bit32u cmsBase;
+static uint16_t cmsBase;
 static saa1099_device* device[2];
 
-static void write_cms(Bitu port, Bitu val, Bitu /* iolen */) {
+static void write_cms(io_port_t port, uint8_t val, io_width_t)
+{
 	if (cms_chan && (!cms_chan->is_enabled))
 		cms_chan->Enable(true);
 	lastWriteTicks = PIC_Ticks;
@@ -95,8 +98,9 @@ static void CMS_CallBack(Bitu len) {
 // The Gameblaster detection
 static Bit8u cms_detect_register = 0xff;
 
-static void write_cms_detect(Bitu port, Bitu val, Bitu /* iolen */) {
-	switch ( port - cmsBase ) {
+static void write_cms_detect(io_port_t port, uint8_t val, io_width_t)
+{
+	switch (port - cmsBase) {
 	case 0x6:
 	case 0x7:
 		cms_detect_register = val;
@@ -104,7 +108,8 @@ static void write_cms_detect(Bitu port, Bitu val, Bitu /* iolen */) {
 	}
 }
 
-static Bitu read_cms_detect(Bitu port, Bitu /* iolen */) {
+static uint8_t read_cms_detect(io_port_t port, io_width_t)
+{
 	Bit8u retval = 0xff;
 	switch ( port - cmsBase ) {
 	case 0x4:
@@ -130,15 +135,15 @@ public:
 	{
 		Section_prop * section = static_cast<Section_prop *>(configuration);
 		Bitu sampleRate = section->Get_int( "oplrate" );
-		cmsBase = section->Get_hex("sbbase");
-		WriteHandler.Install( cmsBase, write_cms, IO_MB, 4 );
+		cmsBase = static_cast<uint16_t>(section->Get_hex("sbbase"));
+		WriteHandler.Install(cmsBase, write_cms, io_width_t::byte, 4);
 
 		// A standalone Gameblaster has a magic chip on it which is
 		// sometimes used for detection.
 		const char * sbtype=section->Get_string("sbtype");
 		if (!strcasecmp(sbtype,"gb")) {
-			DetWriteHandler.Install( cmsBase + 4, write_cms_detect, IO_MB, 12 );
-			DetReadHandler.Install(cmsBase,read_cms_detect,IO_MB,16);
+			DetWriteHandler.Install(cmsBase + 4u, write_cms_detect, io_width_t::byte, 12);
+			DetReadHandler.Install(cmsBase, read_cms_detect, io_width_t::byte, 16);
 		}
 
 		/* Register the Mixer CallBack */
@@ -146,11 +151,9 @@ public:
 
 		lastWriteTicks = PIC_Ticks;
 
-		const uint32_t clock = 7159090; // 14318180 isa clock / 2
-
 		machine_config config;
-		device[0] = new saa1099_device(config, "", 0, clock);
-		device[1] = new saa1099_device(config, "", 0, clock);
+		device[0] = new saa1099_device(config, "", 0, GAMEBLASTER_CLOCK_HZ);
+		device[1] = new saa1099_device(config, "", 0, GAMEBLASTER_CLOCK_HZ);
 
 		device[0]->device_start();
 		device[1]->device_start();
@@ -168,6 +171,6 @@ static CMS* test;
 void CMS_Init(Section* sec) {
 	test = new CMS(sec);
 }
-void CMS_ShutDown(Section* sec) {
+void CMS_ShutDown(MAYBE_UNUSED Section* sec) {
 	delete test;	       
 }

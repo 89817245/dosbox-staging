@@ -85,7 +85,7 @@ static void DRC_CALL_CONV dynrec_cmp_byte(Bit8u op1,Bit8u op2) {
 }
 
 static void DRC_CALL_CONV dynrec_cmp_byte_simple(Bit8u op1,Bit8u op2) DRC_FC;
-static void DRC_CALL_CONV dynrec_cmp_byte_simple(Bit8u op1,Bit8u op2) {
+static void DRC_CALL_CONV dynrec_cmp_byte_simple(MAYBE_UNUSED Bit8u op1,MAYBE_UNUSED Bit8u op2) {
 }
 
 static Bit8u DRC_CALL_CONV dynrec_xor_byte(Bit8u op1,Bit8u op2) DRC_FC;
@@ -139,7 +139,7 @@ static void DRC_CALL_CONV dynrec_test_byte(Bit8u op1,Bit8u op2) {
 }
 
 static void DRC_CALL_CONV dynrec_test_byte_simple(Bit8u op1,Bit8u op2) DRC_FC;
-static void DRC_CALL_CONV dynrec_test_byte_simple(Bit8u op1,Bit8u op2) {
+static void DRC_CALL_CONV dynrec_test_byte_simple(MAYBE_UNUSED Bit8u op1,MAYBE_UNUSED Bit8u op2) {
 }
 
 static Bit16u DRC_CALL_CONV dynrec_add_word(Bit16u op1,Bit16u op2) DRC_FC;
@@ -209,7 +209,7 @@ static void DRC_CALL_CONV dynrec_cmp_word(Bit16u op1,Bit16u op2) {
 }
 
 static void DRC_CALL_CONV dynrec_cmp_word_simple(Bit16u op1,Bit16u op2) DRC_FC;
-static void DRC_CALL_CONV dynrec_cmp_word_simple(Bit16u op1,Bit16u op2) {
+static void DRC_CALL_CONV dynrec_cmp_word_simple(MAYBE_UNUSED Bit16u op1, MAYBE_UNUSED Bit16u op2) {
 }
 
 static Bit16u DRC_CALL_CONV dynrec_xor_word(Bit16u op1,Bit16u op2) DRC_FC;
@@ -263,7 +263,7 @@ static void DRC_CALL_CONV dynrec_test_word(Bit16u op1,Bit16u op2) {
 }
 
 static void DRC_CALL_CONV dynrec_test_word_simple(Bit16u op1,Bit16u op2) DRC_FC;
-static void DRC_CALL_CONV dynrec_test_word_simple(Bit16u op1,Bit16u op2) {
+static void DRC_CALL_CONV dynrec_test_word_simple(MAYBE_UNUSED Bit16u op1, MAYBE_UNUSED Bit16u op2) {
 }
 
 static Bit32u DRC_CALL_CONV dynrec_add_dword(Bit32u op1,Bit32u op2) DRC_FC;
@@ -333,7 +333,7 @@ static void DRC_CALL_CONV dynrec_cmp_dword(Bit32u op1,Bit32u op2) {
 }
 
 static void DRC_CALL_CONV dynrec_cmp_dword_simple(Bit32u op1,Bit32u op2) DRC_FC;
-static void DRC_CALL_CONV dynrec_cmp_dword_simple(Bit32u op1,Bit32u op2) {
+static void DRC_CALL_CONV dynrec_cmp_dword_simple(MAYBE_UNUSED Bit32u op1, MAYBE_UNUSED Bit32u op2) {
 }
 
 static Bit32u DRC_CALL_CONV dynrec_xor_dword(Bit32u op1,Bit32u op2) DRC_FC;
@@ -387,7 +387,7 @@ static void DRC_CALL_CONV dynrec_test_dword(Bit32u op1,Bit32u op2) {
 }
 
 static void DRC_CALL_CONV dynrec_test_dword_simple(Bit32u op1,Bit32u op2) DRC_FC;
-static void DRC_CALL_CONV dynrec_test_dword_simple(Bit32u op1,Bit32u op2) {
+static void DRC_CALL_CONV dynrec_test_dword_simple(MAYBE_UNUSED Bit32u op1, MAYBE_UNUSED Bit32u op2) {
 }
 
 
@@ -2014,7 +2014,7 @@ static bool DRC_CALL_CONV dynrec_io_writeD(Bitu port) {
 	bool ex = CPU_IO_Exception(port,4);
 	if (!ex) IO_WriteD(port,reg_eax);
 	return ex;
-};
+}
 
 static bool DRC_CALL_CONV dynrec_io_readB(Bitu port) DRC_FC;
 static bool DRC_CALL_CONV dynrec_io_readB(Bitu port) {

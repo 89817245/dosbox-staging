@@ -248,7 +248,7 @@ static void dyn_dop_byte_imm_mem(DualOps op,Bit8u reg,Bit8u idx) {
 	if ((op!=DOP_CMP) && (op!=DOP_TEST)) MOV_REG_BYTE_FROM_HOST_REG_LOW(FC_RETOP,reg,idx);
 }
 
-static void dyn_prep_word_imm(Bit8u reg) {
+static void dyn_prep_word_imm(MAYBE_UNUSED Bit8u reg) {
 	Bitu val;
 	if (decode.big_op) {
 		if (decode_fetchd_imm(val)) {
@@ -394,7 +394,6 @@ static void dyn_mov_ev_seg(void) {
 
 
 static void dyn_lea(void) {
-	dyn_get_modrm();
 	dyn_fill_ea(FC_ADDR,false);
 	MOV_REG_WORD_FROM_HOST_REG(FC_ADDR,decode.modrm.reg,decode.big_op);
 }

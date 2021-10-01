@@ -447,7 +447,7 @@ static void gen_mov_qword_to_reg_imm(HostReg dest_reg,Bit64u imm) {
 }
 
 // helper function for gen_mov_word_to_reg
-static void gen_mov_word_to_reg_helper(HostReg dest_reg,void* data,bool dword,HostReg data_reg) {
+static void gen_mov_word_to_reg_helper(HostReg dest_reg, MAYBE_UNUSED void* data,bool dword,HostReg data_reg) {
 	if (dword) {
 		cache_addd( LDR_IMM(dest_reg, data_reg, 0) );       // ldr dest_reg, [data_reg]
 	} else {
@@ -523,7 +523,7 @@ static bool gen_mov_memval_from_reg(HostReg src_reg, void *dest, Bitu size) {
 }
 
 // helper function for gen_mov_word_from_reg
-static void gen_mov_word_from_reg_helper(HostReg src_reg,void* dest,bool dword, HostReg data_reg) {
+static void gen_mov_word_from_reg_helper(HostReg src_reg, MAYBE_UNUSED void* dest,bool dword, HostReg data_reg) {
 	if (dword) {
 		cache_addd( STR_IMM(src_reg, data_reg, 0) );        // str src_reg, [data_reg]
 	} else {
@@ -575,12 +575,12 @@ static void INLINE gen_mov_byte_to_reg_low_imm_canuseword(HostReg dest_reg,Bit8u
 }
 
 // move the lowest 8bit of a register into memory
-static void gen_mov_byte_from_reg_low(HostReg src_reg,void* dest) {
-	if (!gen_mov_memval_from_reg(src_reg, dest, 1)) {
-		gen_mov_qword_to_reg_imm(temp1, (Bit64u)dest);
-		cache_addd( STRB_IMM(src_reg, temp1, 0) );      // strb src_reg, [temp1]
-	}
-}
+// static void gen_mov_byte_from_reg_low(HostReg src_reg,void* dest) {
+// 	if (!gen_mov_memval_from_reg(src_reg, dest, 1)) {
+// 		gen_mov_qword_to_reg_imm(temp1, (Bit64u)dest);
+// 		cache_addd( STRB_IMM(src_reg, temp1, 0) );      // strb src_reg, [temp1]
+// 	}
+// }
 
 
 
@@ -637,7 +637,7 @@ static void gen_add_imm(HostReg reg,Bit32u imm) {
 
 // and a 32bit constant value with a full register
 static void gen_and_imm(HostReg reg,Bit32u imm) {
-	Bit32u imm2, scale;
+	Bit32u imm2;
 
 	imm2 = ~imm;
 	if(!imm2) return;
@@ -688,9 +688,9 @@ static void gen_add_direct_word(void* dest,Bit32u imm,bool dword) {
 }
 
 // add an 8bit constant value to a dword memory value
-static void gen_add_direct_byte(void* dest,Bit8s imm) {
-	gen_add_direct_word(dest, (Bit32s)imm, 1);
-}
+// static void gen_add_direct_byte(void* dest,Bit8s imm) {
+// 	gen_add_direct_word(dest, (Bit32s)imm, 1);
+// }
 
 // subtract a 32bit (dword==true) or 16bit (dword==false) constant value from a memory value
 static void gen_sub_direct_word(void* dest,Bit32u imm,bool dword) {
@@ -728,9 +728,9 @@ static void gen_sub_direct_word(void* dest,Bit32u imm,bool dword) {
 }
 
 // subtract an 8bit constant value from a dword memory value
-static void gen_sub_direct_byte(void* dest,Bit8s imm) {
-	gen_sub_direct_word(dest, (Bit32s)imm, 1);
-}
+// static void gen_sub_direct_byte(void* dest,Bit8s imm) {
+// 	gen_sub_direct_word(dest, (Bit32s)imm, 1);
+// }
 
 // effective address calculation, destination is dest_reg
 // scale_reg is scaled by scale (scale_reg*(2^scale)) and
@@ -762,7 +762,7 @@ static void INLINE gen_call_function_raw(void * func) {
 // generate a call to a function with paramcount parameters
 // note: the parameters are loaded in the architecture specific way
 // using the gen_load_param_ functions below
-static INLINE const Bit8u* gen_call_function_setup(void * func,Bitu paramcount,bool fastcall=false) {
+static INLINE const Bit8u* gen_call_function_setup(void * func, MAYBE_UNUSED Bitu paramcount, MAYBE_UNUSED bool fastcall=false) {
 	const Bit8u* proc_addr = cache.pos;
 	gen_call_function_raw(func);
 	return proc_addr;
@@ -1133,10 +1133,8 @@ static void gen_fill_function_ptr(const Bit8u * pos,void* fct_ptr,Bitu flags_typ
 }
 #endif
 
-static void cache_block_closing(const Bit8u* block_start,Bitu block_size) {
-	//flush cache - GCC/LLVM builtin
-	__builtin___clear_cache((char *)block_start, (char *)(block_start+block_size));
-}
+static void cache_block_closing(MAYBE_UNUSED const Bit8u *block_start,
+                                MAYBE_UNUSED Bitu block_size) { }
 
 static void cache_block_before_close(void) { }
 

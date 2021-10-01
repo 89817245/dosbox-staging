@@ -37,7 +37,7 @@ static struct {
 	struct {
 		bool enabled;
 		Bit8u div;
-		float delay;
+		double delay;
 		bool acknowledged;
 	} timer;
 	struct {
@@ -48,7 +48,8 @@ static struct {
 	bool update_ended;
 } cmos;
 
-static void cmos_timerevent(Bitu /*val*/) {
+static void cmos_timerevent(uint32_t /*val*/)
+{
 	if (cmos.timer.acknowledged) {
 		cmos.timer.acknowledged = false;
 		PIC_ActivateIRQ(8);
@@ -62,22 +63,25 @@ static void cmos_timerevent(Bitu /*val*/) {
 static void cmos_checktimer(void) {
 	PIC_RemoveEvents(cmos_timerevent);
 	if (cmos.timer.div<=2) cmos.timer.div+=7;
-	cmos.timer.delay=(1000.0f/(32768.0f / (1 << (cmos.timer.div - 1))));
+	cmos.timer.delay = (1000.0 / (32768.0 / (1 << (cmos.timer.div - 1))));
 	if (!cmos.timer.div || !cmos.timer.enabled) return;
-	LOG(LOG_PIT,LOG_NORMAL)("RTC Timer at %.2f hz",1000.0/cmos.timer.delay);
-//	PIC_AddEvent(cmos_timerevent,cmos.timer.delay);
+	LOG(LOG_PIT, LOG_NORMAL)("RTC Timer at %.2f hz", 1000.0 / static_cast<double>(cmos.timer.delay));
+	//	PIC_AddEvent(cmos_timerevent,cmos.timer.delay);
 	/* A rtc is always running */
-	double remd=fmod(PIC_FullIndex(),(double)cmos.timer.delay);
-	PIC_AddEvent(cmos_timerevent,(float)((double)cmos.timer.delay-remd)); //Should be more like a real pc. Check
-//	status reg A reading with this (and with other delays actually)
+	const auto remd = fmod(PIC_FullIndex(), cmos.timer.delay);
+	// Should be more like a real pc. Check
+	PIC_AddEvent(cmos_timerevent, cmos.timer.delay - remd);
+	// Status reg A reading with this (and with other delays actually)
 }
 
-void cmos_selreg(Bitu /*port*/,Bitu val,Bitu /*iolen*/) {
-	cmos.reg=val & 0x3f;
-	cmos.nmi=(val & 0x80)>0;
+void cmos_selreg(io_port_t, uint8_t val, io_width_t)
+{
+	cmos.reg = val & 0x3f;
+	cmos.nmi = (val & 0x80) > 0;
 }
 
-static void cmos_writereg(Bitu /*port*/,Bitu val,Bitu /*iolen*/) {
+static void cmos_writereg(io_port_t, uint8_t val, io_width_t)
+{
 	switch (cmos.reg) {
 	case 0x00:		/* Seconds */
 	case 0x02:		/* Minutes */
@@ -120,12 +124,12 @@ static void cmos_writereg(Bitu /*port*/,Bitu val,Bitu /*iolen*/) {
 	}
 }
 
-
 #define MAKE_RETURN(_VAL) (cmos.bcd ? ((((_VAL) / 10) << 4) | ((_VAL) % 10)) : (_VAL));
 
-static Bitu cmos_readreg(Bitu /*port*/,Bitu /*iolen*/) {
-	if (cmos.reg>0x3f) {
-		LOG(LOG_BIOS,LOG_ERROR)("CMOS:Read from illegal register %x",cmos.reg);
+static uint8_t cmos_readreg(io_port_t, io_width_t)
+{
+	if (cmos.reg > 0x3f) {
+		LOG(LOG_BIOS, LOG_ERROR)("CMOS:Read from illegal register %x", cmos.reg);
 		return 0xff;
 	}
 	Bitu drive_a, drive_b;
@@ -157,7 +161,7 @@ static Bitu cmos_readreg(Bitu /*port*/,Bitu /*iolen*/) {
 	case 0x05:		/* Hours Alarm */
 		return cmos.regs[cmos.reg];
 	case 0x0a:		/* Status register A */
-		if (PIC_TickIndex()<0.002) {
+		if (PIC_TickIndex() < 0.002f) {
 			return (cmos.regs[0x0a]&0x7f) | 0x80;
 		} else {
 			return (cmos.regs[0x0a]&0x7f);
@@ -172,7 +176,7 @@ static Bitu cmos_readreg(Bitu /*port*/,Bitu /*iolen*/) {
 		} else {
 			/* Give correct values at certain times */
 			Bit8u val=0;
-			double index=PIC_FullIndex();
+			const auto index = PIC_FullIndex();
 			if (index>=(cmos.last.timer+cmos.timer.delay)) {
 				cmos.last.timer=index;
 				val|=0x40;
@@ -261,7 +265,6 @@ static Bitu cmos_readreg(Bitu /*port*/,Bitu /*iolen*/) {
 	case 0x3a:
 		return 0;
 
-
 	case 0x0b:		/* Status register B */
 	case 0x0d:		/* Status register D */
 	case 0x0f:		/* Shutdown status byte */
@@ -291,17 +294,17 @@ private:
 	IO_WriteHandleObject WriteHandler[2];
 public:
 	CMOS(Section* configuration):Module_base(configuration){
-		WriteHandler[0].Install(0x70,cmos_selreg,IO_MB);
-		WriteHandler[1].Install(0x71,cmos_writereg,IO_MB);
-		ReadHandler[0].Install(0x71,cmos_readreg,IO_MB);
-		cmos.timer.enabled=false;
-		cmos.timer.acknowledged=true;
-		cmos.reg=0xa;
-		cmos_writereg(0x71,0x26,1);
-		cmos.reg=0xb;
-		cmos_writereg(0x71,0x2,1);	//Struct tm *loctime is of 24 hour format,
-		cmos.reg=0xd;
-		cmos_writereg(0x71,0x80,1); /* RTC power on */
+		WriteHandler[0].Install(0x70, cmos_selreg, io_width_t::byte);
+		WriteHandler[1].Install(0x71, cmos_writereg, io_width_t::byte);
+		ReadHandler[0].Install(0x71, cmos_readreg, io_width_t::byte);
+		cmos.timer.enabled = false;
+		cmos.timer.acknowledged = true;
+		cmos.reg = 0xa;
+		cmos_writereg(0x71, 0x26, io_width_t::byte);
+		cmos.reg = 0xb;
+		cmos_writereg(0x71, 0x2, io_width_t::byte); // Struct tm *loctime is of 24 hour format,
+		cmos.reg = 0xd;
+		cmos_writereg(0x71, 0x80, io_width_t::byte); /* RTC power on */
 		// Equipment is updated from bios.cpp and bios_disk.cpp
 		/* Fill in base memory size, it is 640K always */
 		cmos.regs[0x15]=(Bit8u)0x80;

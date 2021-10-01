@@ -24,6 +24,7 @@
 
 #include "dosbox.h"
 
+#include <atomic>
 #include <functional>
 
 #include "envelope.h"
@@ -105,7 +106,7 @@ public:
 	float volmain[2] = {0.0f, 0.0f};
 	MixerChannel *next = nullptr;
 	const char *name = nullptr;
-	Bitu done = 0u; // Timing on how many samples have been done by the mixer
+	std::atomic<Bitu> done; // Timing on how many samples have been done by the mixer
 	bool is_enabled = false;
 
 private:
@@ -156,16 +157,16 @@ void MIXER_DelChannel(MixerChannel* delchan);
  * and removes itself when destroyed. */
 class MixerObject{
 private:
-	bool installed;
-	char m_name[32];
+	bool installed = false;
+	char m_name[32] = "";
+
 public:
-	MixerObject() : installed(false) {}
 	MixerChannel* Install(MIXER_Handler handler,Bitu freq,const char * name);
 	~MixerObject();
 };
 
 /* PC Speakers functions, tightly related to the timer functions */
-void PCSPEAKER_SetCounter(Bitu cntr,Bitu mode);
-void PCSPEAKER_SetType(Bitu mode);
+void PCSPEAKER_SetCounter(uint32_t cntr, uint32_t mode);
+void PCSPEAKER_SetType(uint32_t mode);
 
 #endif

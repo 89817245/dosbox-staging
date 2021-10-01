@@ -492,9 +492,10 @@
 		}
 	CASE_W(0x8d)												/* LEA Gw */
 		{
+			GetRMrw;
+			if (rm >= 0xc0) goto illegal_opcode;
 			//Little hack to always use segprefixed version
 			BaseDS=BaseSS=0;
-			GetRMrw;
 			if (TEST_PREFIX_ADDR) {
 				*rmrw=(Bit16u)(*EATable[256+rm])();
 			} else {
@@ -510,6 +511,7 @@
 			switch (which) {
 			case 0x02:					/* MOV SS,Ew */
 				CPU_Cycles++; //Always do another instruction
+				FALLTHROUGH;
 			case 0x00:					/* MOV ES,Ew */
 			case 0x03:					/* MOV DS,Ew */
 			case 0x05:					/* MOV GS,Ew */
@@ -1165,7 +1167,7 @@
 				else {GetEAa;Push_16(LoadMw(eaa));}
 				break;
 			default:
-				LOG(LOG_CPU,LOG_ERROR)("CPU:GRP5:Illegal Call %2X",which);
+				LOG(LOG_CPU,LOG_ERROR)("CPU:GRP5:Illegal Call %2X",static_cast<uint32_t>(which));
 				goto illegal_opcode;
 			}
 			break;

@@ -22,6 +22,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "logging.h"
 #include "support.h"
 
 // Permitted ASCII control characters in batch files
@@ -61,8 +62,9 @@ BatchFile::BatchFile(DOS_Shell *host,
 
 BatchFile::~BatchFile() {
 	delete cmd;
-	shell->bf=prev;
-	shell->echo=echo;
+	assert(shell);
+	shell->bf = prev;
+	shell->echo = echo;
 }
 
 // TODO: Refactor this sprawling function into smaller ones without GOTOs
@@ -70,8 +72,7 @@ bool BatchFile::ReadLine(char * line) {
 	//Open the batchfile and seek to stored postion
 	if (!DOS_OpenFile(filename.c_str(),(DOS_NOT_INHERIT|OPEN_READ),&file_handle)) {
 		LOG(LOG_MISC,LOG_ERROR)("ReadLine Can't open BatchFile %s",filename.c_str());
-		delete this;
-		return false;
+		return false; // Parent deletes this BatchFile on negative return
 	}
 	DOS_SeekFile(file_handle,&(this->location),DOS_SEEK_SET);
 
@@ -96,8 +97,11 @@ emptyline:
 			 * international ASCII characters that are wrapped when
 			 * char is a signed type
 			 */
-			if (val < 0 || val > UNIT_SEPARATOR ||
-			    val == BACKSPACE || val == ESC || val == TAB) {
+			if (
+#if (CHAR_MIN < 0) // char is signed
+			    val < 0 ||
+#endif
+			    val > UNIT_SEPARATOR || val == BACKSPACE || val == ESC || val == TAB) {
 				// Only add it if room for it (and trailing zero)
 				// in the buffer, but do the check here instead
 				// at the end So we continue reading till EOL/EOF
@@ -105,17 +109,16 @@ emptyline:
 					*cmd_write++ = val;
 				}
 			} else if (val != LINE_FEED && val != CARRIAGE_RETURN) {
-				shell->WriteOut(MSG_Get("SHELL_ILLEGAL_CONTROL_CHARACTER"),
-				                val, val);
+				DEBUG_LOG_MSG("Encountered non-standard character: Dec %03u and Hex %#04x",
+				              val, val);
 			}
 		}
 	} while (val != LINE_FEED && bytes_read);
 	*cmd_write=0;
 	if (!bytes_read && cmd_write == temp) {
-		//Close file and delete bat file
+		// Close the file and delete this BatchFile on return
 		DOS_CloseFile(file_handle);
-		delete this;
-		return false;
+		return false; // Parent deletes this BatchFile on negative return
 	}
 	if (!strlen(temp)) goto emptyline;
 	if (temp[0]==':') goto emptyline;
@@ -157,7 +160,9 @@ emptyline:
 				next -= '0';
 				if (cmd->GetCount()<(unsigned int)next) continue;
 				std::string word;
+#if (CHAR_MIN < 0) // char is signed
 				assert(next >= 0);
+#endif
 				if (!cmd->FindCommand(static_cast<unsigned>(next), word))
 					continue;
 				append_cmd_write(word.c_str());
@@ -236,14 +241,19 @@ again:
 			// Note: the negative allowance permits high
 			// international ASCII characters that are wrapped when
 			// char is a signed type
-			if (val < 0 || val > UNIT_SEPARATOR) {
+
+			if (
+#if (CHAR_MIN < 0) // char is signed
+			    val < 0 ||
+#endif
+			    val > UNIT_SEPARATOR) {
 				if (cmd_write - cmd_buffer + 1 < CMD_MAXLINE - 1) {
 					*cmd_write++ = val;
 				}
 			} else if (val != BACKSPACE && val != CARRIAGE_RETURN &&
 			           val != ESC && val != LINE_FEED && val != TAB) {
-				shell->WriteOut(MSG_Get("SHELL_ILLEGAL_CONTROL_CHARACTER"),
-				                val, val);
+				DEBUG_LOG_MSG("Encountered non-standard character: Dec %03u and Hex %#04x",
+				              val, val);
 			}
 		}
 	} while (val != LINE_FEED && bytes_read);

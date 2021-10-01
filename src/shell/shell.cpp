@@ -25,11 +25,11 @@
 
 #include "callback.h"
 #include "control.h"
-#include "dosbox.h"
 #include "fs_utils.h"
 #include "mapper.h"
 #include "regs.h"
 #include "string_utils.h"
+#include "timer.h"
 
 Bitu call_shellstop;
 /* Larger scope so shell_del autoexec can use it to
@@ -116,7 +116,7 @@ void AutoexecObject::CreateAutoexec()
 			offset = n + 2;
 		}
 
-		auto_len = strlen(autoexec_data);
+		auto_len = safe_strlen(autoexec_data);
 		if ((auto_len+linecopy.length() + 3) > AUTOEXEC_SIZE) {
 			E_Exit("SYSTEM:Autoexec.bat file overflow");
 		}
@@ -314,7 +314,7 @@ void DOS_Shell::ParseLine(char * line) {
 void DOS_Shell::RunInternal()
 {
 	char input_line[CMD_MAXLINE] = {0};
-	while (bf) {
+	while (bf && !shutdown_requested) {
 		if (bf->ReadLine(input_line)) {
 			if (echo) {
 				if (input_line[0] != '@') {
@@ -325,12 +325,20 @@ void DOS_Shell::RunInternal()
 			}
 			ParseLine(input_line);
 			if (echo) WriteOut_NoParsing("\n");
+		} else {
+			bf.reset();
 		}
 	}
 }
 
+extern int64_t ticks_at_program_launch; // from shell_cmd
 void DOS_Shell::Run()
 {
+	// Initialize the tick-count only when the first shell has launched.
+	// This ensures that slow-performing configurable tasks (like loading MIDI SF2 files) have already
+	// been performed and won't affect this time.
+	ticks_at_program_launch = GetTicks();
+
 	char input_line[CMD_MAXLINE] = {0};
 	std::string line;
 	if (cmd->FindStringRemainBegin("/C",line)) {
@@ -349,15 +357,20 @@ void DOS_Shell::Run()
 		                                  Verbosity::Medium;
 		if (wants_welcome_banner) {
 			WriteOut(MSG_Get("SHELL_STARTUP_BEGIN"),
-			         DOSBOX_GetDetailedVersion());
+			         DOSBOX_GetDetailedVersion(), PRIMARY_MOD_NAME,
+			         PRIMARY_MOD_NAME, PRIMARY_MOD_PAD, PRIMARY_MOD_PAD,
+			         PRIMARY_MOD_NAME, PRIMARY_MOD_PAD);
 #if C_DEBUG
-			WriteOut(MSG_Get("SHELL_STARTUP_DEBUG"));
+			WriteOut(MSG_Get("SHELL_STARTUP_DEBUG"), MMOD2_NAME);
 #endif
 			if (machine == MCH_CGA) {
 				if (mono_cga)
-					WriteOut(MSG_Get("SHELL_STARTUP_CGA_MONO"));
+					WriteOut(MSG_Get("SHELL_STARTUP_CGA_MONO"),
+					         MMOD2_NAME);
 				else
-					WriteOut(MSG_Get("SHELL_STARTUP_CGA"));
+					WriteOut(MSG_Get("SHELL_STARTUP_CGA"),
+					         MMOD2_NAME, MMOD1_NAME,
+					         MMOD2_NAME, PRIMARY_MOD_PAD);
 			}
 			if (machine == MCH_HERC)
 				WriteOut(MSG_Get("SHELL_STARTUP_HERC"));
@@ -380,19 +393,23 @@ void DOS_Shell::Run()
 					}
 				}
 				ParseLine(input_line);
+			} else {
+				bf.reset();
 			}
 		} else {
 			if (echo) ShowPrompt();
 			InputCommand(input_line);
 			ParseLine(input_line);
 		}
-	} while (!exit_requested);
+	} while (!exit_cmd_called && !shutdown_requested);
 }
 
 void DOS_Shell::SyntaxError()
 {
 	WriteOut(MSG_Get("SHELL_SYNTAXERROR"));
 }
+
+extern int64_t ticks_at_program_launch;
 
 class AUTOEXEC final : public Module_base {
 private:
@@ -405,114 +422,149 @@ public:
 	{
 		/* Register a virtual AUOEXEC.BAT file */
 		std::string line;
-		Section_line * section=static_cast<Section_line *>(configuration);
+		Section_line *section = static_cast<Section_line *>(configuration);
 
-		/* Check -securemode switch to disable mount/imgmount/boot after running autoexec.bat */
-		bool secure = control->cmdline->FindExist("-securemode",true);
+		/* Check -securemode switch to disable mount/imgmount/boot after
+		 * running autoexec.bat */
+		bool secure = control->cmdline->FindExist("-securemode", true);
 
-		/* add stuff from the configfile unless -noautexec or -securemode is specified. */
-		char * extra = const_cast<char*>(section->data.c_str());
-		if (extra && !secure && !control->cmdline->FindExist("-noautoexec",true)) {
+		/* add stuff from the configfile unless -noautexec or
+		 * -securemode is specified. */
+		char *extra = const_cast<char *>(section->data.c_str());
+		if (extra && !secure && !control->cmdline->FindExist("-noautoexec", true)) {
 			/* detect if "echo off" is the first line */
-			size_t firstline_length = strcspn(extra,"\r\n");
-			bool echo_off  = !strncasecmp(extra,"echo off",8);
-			if (echo_off && firstline_length == 8) extra += 8;
+			size_t firstline_length = strcspn(extra, "\r\n");
+			bool echo_off = !strncasecmp(extra, "echo off", 8);
+			if (echo_off && firstline_length == 8)
+				extra += 8;
 			else {
-				echo_off = !strncasecmp(extra,"@echo off",9);
-				if (echo_off && firstline_length == 9) extra += 9;
-				else echo_off = false;
+				echo_off = !strncasecmp(extra, "@echo off", 9);
+				if (echo_off && firstline_length == 9)
+					extra += 9;
+				else
+					echo_off = false;
 			}
 
 			/* if "echo off" move it to the front of autoexec.bat */
-			if (echo_off)  { 
+			if (echo_off) {
 				autoexec_echo.InstallBefore("@echo off");
-				if (*extra == '\r') extra++; //It can point to \0
-				if (*extra == '\n') extra++; //same
+				if (*extra == '\r')
+					extra++; // It can point to \0
+				if (*extra == '\n')
+					extra++; // same
 			}
 
-			/* Install the stuff from the configfile if anything left after moving echo off */
+			/* Install the stuff from the configfile if anything
+			 * left after moving echo off */
 
-			if (*extra) autoexec[0].Install(std::string(extra));
+			if (*extra)
+				autoexec[0].Install(std::string(extra));
 		}
 
-		/* Check to see for extra command line options to be added (before the command specified on commandline) */
+		/* Check to see for extra command line options to be added
+		 * (before the command specified on commandline) */
 		/* Maximum of extra commands: 10 */
 		Bitu i = 1;
-		while (control->cmdline->FindString("-c",line,true) && (i <= 11)) {
-#if defined (WIN32)
-			//replace single with double quotes so that mount commands can contain spaces
-			for(Bitu temp = 0;temp < line.size();++temp) if(line[temp] == '\'') line[temp]='\"';
-#endif //Linux users can simply use \" in their shell
+		while (control->cmdline->FindString("-c", line, true) && (i <= 11)) {
+#if defined(WIN32)
+			// replace single with double quotes so that mount
+			// commands can contain spaces
+			for (Bitu temp = 0; temp < line.size(); ++temp)
+				if (line[temp] == '\'')
+					line[temp] = '\"';
+#endif // Linux users can simply use \" in their shell
 			autoexec[i++].Install(line);
 		}
 
-		/* Check for the -exit switch which causes dosbox to when the command on the commandline has finished */
-		bool addexit = control->cmdline->FindExist("-exit",true);
+		// Check for the -exit switch, which indicates they want to quit after the command has finished
+		const bool requested_exit_after_command = control->cmdline->FindExist("-exit");
+
+		// Check if instant-launch is active
+		const bool using_instant_launch = control->GetStartupVerbosity() == Verbosity::InstantLaunch;
+
+		// Should we add an 'exit' call to the end of autoexec.bat?
+		const bool addexit = requested_exit_after_command || using_instant_launch;
 
 		/* Check for first command being a directory or file */
-		char buffer[CROSS_LEN+1];
-		char orig[CROSS_LEN+1];
-		char cross_filesplit[2] = {CROSS_FILESPLIT , 0};
+		char buffer[CROSS_LEN + 1];
+		char orig[CROSS_LEN + 1];
+		char cross_filesplit[2] = {CROSS_FILESPLIT, 0};
 
 		unsigned int command_index = 1;
 		bool command_found = false;
 		while (control->cmdline->FindCommand(command_index++, line) &&
 		       !command_found) {
 			struct stat test;
-			if (line.length() > CROSS_LEN) continue;
+			if (line.length() > CROSS_LEN)
+				continue;
 			safe_strcpy(buffer, line.c_str());
-			if (stat(buffer,&test)) {
-				if (getcwd(buffer,CROSS_LEN) == NULL) continue;
-				if (strlen(buffer) + line.length() + 1 > CROSS_LEN) continue;
+			if (stat(buffer, &test)) {
+				if (getcwd(buffer, CROSS_LEN) == NULL)
+					continue;
+				if (safe_strlen(buffer) + line.length() + 1 > CROSS_LEN)
+					continue;
 				safe_strcat(buffer, cross_filesplit);
 				safe_strcat(buffer, line.c_str());
-				if (stat(buffer,&test)) continue;
+				if (stat(buffer, &test))
+					continue;
 			}
 			if (test.st_mode & S_IFDIR) {
 				autoexec[12].Install(std::string("MOUNT C \"") + buffer + "\"");
 				autoexec[13].Install("C:");
-				if(secure) autoexec[14].Install("z:\\config.com -securemode");
+				if (secure)
+					autoexec[14].Install("z:\\config.com -securemode");
 				command_found = true;
 			} else {
-				char* name = strrchr(buffer,CROSS_FILESPLIT);
-				if (!name) { //Only a filename
+				char *name = strrchr(buffer, CROSS_FILESPLIT);
+				if (!name) { // Only a filename
 					line = buffer;
-					if (getcwd(buffer,CROSS_LEN) == NULL) continue;
-					if (strlen(buffer) + line.length() + 1 > CROSS_LEN) continue;
+					if (getcwd(buffer, CROSS_LEN) == NULL)
+						continue;
+					if (safe_strlen(buffer) + line.length() + 1 > CROSS_LEN)
+						continue;
 					safe_strcat(buffer, cross_filesplit);
 					safe_strcat(buffer, line.c_str());
-					if(stat(buffer,&test)) continue;
-					name = strrchr(buffer,CROSS_FILESPLIT);
-					if(!name) continue;
+					if (stat(buffer, &test))
+						continue;
+					name = strrchr(buffer, CROSS_FILESPLIT);
+					if (!name)
+						continue;
 				}
 				*name++ = 0;
 				if (!path_exists(buffer))
 					continue;
 				autoexec[12].Install(std::string("MOUNT C \"") + buffer + "\"");
 				autoexec[13].Install("C:");
-				/* Save the non-modified filename (so boot and imgmount can use it (long filenames, case sensivitive)) */
+				/* Save the non-modified filename (so boot and
+				 * imgmount can use it (long filenames, case
+				 * sensivitive)) */
 				safe_strcpy(orig, name);
 				upcase(name);
-				if(strstr(name,".BAT") != 0) {
-					if(secure) autoexec[14].Install("z:\\config.com -securemode");
+				if (strstr(name, ".BAT") != 0) {
+					if (secure)
+						autoexec[14].Install("z:\\config.com -securemode");
 					/* BATch files are called else exit will not work */
 					autoexec[15].Install(std::string("CALL ") + name);
-					if(addexit) autoexec[16].Install("exit");
-				} else if((strstr(name,".IMG") != 0) || (strstr(name,".IMA") !=0 )) {
-					//No secure mode here as boot is destructive and enabling securemode disables boot
+					if (addexit)
+						autoexec[16].Install("exit");
+				} else if ((strstr(name, ".IMG") != 0) || (strstr(name, ".IMA") != 0)) {
+					// No secure mode here as boot is destructive and enabling securemode disables boot
 					/* Boot image files */
 					autoexec[15].Install(std::string("BOOT ") + orig);
-				} else if((strstr(name,".ISO") != 0) || (strstr(name,".CUE") !=0 )) {
+				} else if ((strstr(name, ".ISO") != 0) || (strstr(name, ".CUE") != 0)) {
 					/* imgmount CD image files */
 					/* securemode gets a different number from the previous branches! */
 					autoexec[14].Install(std::string("IMGMOUNT D \"") + orig + std::string("\" -t iso"));
-					//autoexec[16].Install("D:");
-					if(secure) autoexec[15].Install("z:\\config.com -securemode");
+					// autoexec[16].Install("D:");
+					if (secure)
+						autoexec[15].Install("z:\\config.com -securemode");
 					/* Makes no sense to exit here */
 				} else {
-					if(secure) autoexec[14].Install("z:\\config.com -securemode");
+					if (secure)
+						autoexec[14].Install("z:\\config.com -securemode");
 					autoexec[15].Install(name);
-					if(addexit) autoexec[16].Install("exit");
+					if (addexit)
+						autoexec[16].Install("exit");
 				}
 				command_found = true;
 			}
@@ -522,6 +574,11 @@ public:
 		if ( !command_found ) {
 			if ( secure ) autoexec[12].Install("z:\\config.com -securemode");
 		}
+
+		// Print the entire autoexec content, if needed:
+		// for (const auto &autoexec_line : autoexec)
+		// 	LOG_INFO("AUTOEXEC-LINE: %s", autoexec_line.GetLine().c_str());
+
 		VFILE_Register("AUTOEXEC.BAT",(Bit8u *)autoexec_data,(Bit32u)strlen(autoexec_data));
 	}
 };
@@ -555,7 +612,7 @@ static Bitu INT2E_Handler()
 	if (crlf) *crlf=0;
 
 	/* Execute command */
-	if (strlen(tail.buffer)) {
+	if (safe_strlen(tail.buffer)) {
 		DOS_Shell temp;
 		temp.ParseLine(tail.buffer);
 		temp.RunInternal();
@@ -579,9 +636,7 @@ void SHELL_Init() {
 	MSG_Add("SHELL_ILLEGAL_PATH","Illegal Path.\n");
 	MSG_Add("SHELL_CMD_HELP","If you want a list of all supported commands type \033[33;1mhelp /all\033[0m .\nA short list of the most often used commands:\n");
 	MSG_Add("SHELL_CMD_ECHO_ON","ECHO is on.\n");
-	MSG_Add("SHELL_CMD_ECHO_OFF","ECHO is off.\n");
-	MSG_Add("SHELL_ILLEGAL_CONTROL_CHARACTER",
-	        "Unexpected control character: Dec %03u and Hex %#04x.\n");
+	MSG_Add("SHELL_CMD_ECHO_OFF", "ECHO is off.\n");
 	MSG_Add("SHELL_ILLEGAL_SWITCH","Illegal switch: %s.\n");
 	MSG_Add("SHELL_MISSING_PARAMETER","Required parameter missing.\n");
 	MSG_Add("SHELL_CMD_CHDIR_ERROR","Unable to change to: %s.\n");
@@ -640,23 +695,23 @@ void SHELL_Init() {
 	        "\xBA For a short introduction for new users type: \033[33mINTRO\033[37m                 \xBA\n"
 	        "\xBA For supported shell commands type: \033[33mHELP\033[37m                            \xBA\n"
 	        "\xBA                                                                    \xBA\n"
-	        "\xBA To adjust the emulated CPU speed, use \033[31m" PRIMARY_MOD_NAME "+F11\033[37m and \033[31m" PRIMARY_MOD_NAME "+F12\033[37m." PRIMARY_MOD_PAD PRIMARY_MOD_PAD "       \xBA\n"
-	        "\xBA To activate the keymapper \033[31m" PRIMARY_MOD_NAME "+F1\033[37m." PRIMARY_MOD_PAD "                                 \xBA\n"
+	        "\xBA To adjust the emulated CPU speed, use \033[31m%s+F11\033[37m and \033[31m%s+F12\033[37m.%s%s       \xBA\n"
+	        "\xBA To activate the keymapper \033[31m%s+F1\033[37m.%s                                 \xBA\n"
 	        "\xBA For more information read the \033[36mREADME\033[37m file in the DOSBox directory. \xBA\n"
 	        "\xBA                                                                    \xBA\n");
 	MSG_Add("SHELL_STARTUP_CGA",
 	        "\xBA DOSBox supports Composite CGA mode.                                \xBA\n"
 	        "\xBA Use \033[31mF12\033[37m to set composite output ON, OFF, or AUTO (default).        \xBA\n"
-	        "\xBA \033[31m(" MMOD2_NAME ")F11\033[37m changes hue; \033[31m" MMOD1_NAME "+" MMOD2_NAME "+F11\033[37m selects early/late CGA model.  \xBA\n"
+	        "\xBA \033[31mF10\033[37m selects the CGA settings to change and \033[31m(%s+)F11\033[37m changes it.   \xBA\n"
 	        "\xBA                                                                    \xBA\n");
 	MSG_Add("SHELL_STARTUP_CGA_MONO",
 	        "\xBA Use \033[31mF11\033[37m to cycle through green, amber, white and paper-white mode, \xBA\n"
-	        "\xBA and \033[31m" MMOD2_NAME "+F11\033[37m to change contrast/brightness settings.                \xBA\n");
+	        "\xBA and \033[31m%s+F11\033[37m to change contrast/brightness settings.                \xBA\n");
 	MSG_Add("SHELL_STARTUP_HERC",
 	        "\xBA Use \033[31mF11\033[37m to cycle through white, amber, and green monochrome color. \xBA\n"
 	        "\xBA                                                                    \xBA\n");
 	MSG_Add("SHELL_STARTUP_DEBUG",
-	        "\xBA Press \033[31m" MMOD2_NAME "+Pause\033[37m to enter the debugger or start the exe with \033[33mDEBUG\033[37m. \xBA\n"
+	        "\xBA Press \033[31m%s+Pause\033[37m to enter the debugger or start the exe with \033[33mDEBUG\033[37m. \xBA\n"
 	        "\xBA                                                                    \xBA\n");
 	MSG_Add("SHELL_STARTUP_END",
 	        "\xBA \033[33mhttps://dosbox-staging.github.io\033[37m                                   \xBA\n"
@@ -695,7 +750,9 @@ void SHELL_Init() {
 	        "               E  By extension (alphabetic)  D  By date & time (oldest first)\n");
 	MSG_Add("SHELL_CMD_ECHO_HELP","Display messages and enable/disable command echoing.\n");
 	MSG_Add("SHELL_CMD_EXIT_HELP","Exit from the shell.\n");
+	MSG_Add("SHELL_CMD_EXIT_TOO_SOON", "Preventing an early 'exit' call from terminating.\n");
 	MSG_Add("SHELL_CMD_HELP_HELP","Show help.\n");
+	MSG_Add("SHELL_CMD_HELP_HELP_LONG","HELP [command]\n");
 	MSG_Add("SHELL_CMD_MKDIR_HELP","Make Directory.\n");
 	MSG_Add("SHELL_CMD_MKDIR_HELP_LONG","MKDIR [drive:][path]\n"
 	        "MD [drive:][path]\n");
@@ -716,6 +773,24 @@ void SHELL_Init() {
 	        "REN [drive:][path]filename1 filename2.\n\n"
 	        "Note that you can not specify a new drive or path for your destination file.\n");
 	MSG_Add("SHELL_CMD_DELETE_HELP","Removes one or more files.\n");
+	MSG_Add("SHELL_CMD_DELETE_HELP_LONG", "Usage:\n"
+	        "  \033[32;1mdel\033[0m \033[36;1mPATTERN\033[0m\n"
+	        "  \033[32;1merase\033[0m \033[36;1mPATTERN\033[0m\n"
+	        "\n"
+	        "Where:\n"
+	        "  \033[36;1mPATTERN\033[0m can be either an exact filename (such as \033[36;1mfile.txt\033[0m) or an inexact\n"
+	        "          filename using one or more wildcards, which are the asterisk (*)\n"
+	        "          representing any sequence of one or more characters, and the question\n"
+	        "          mark (?) representing any single character, such as \033[36;1m*.bat\033[0m and \033[36;1mc?.txt\033[0m.\n"
+	        "\n"
+	        "Warning:\n"
+	        "  Be careful when using a pattern with wildcards, especially \033[36;1m*.*\033[0m, as all files\n"
+	        "  matching the pattern will be deleted.\n"
+	        "\n"
+	        "Examples:\n"
+	        "  \033[32;1mdel\033[0m \033[36;1mtest.bat\033[0m\n"
+	        "  \033[32;1mdel\033[0m \033[36;1mc*.*\033[0m\n"
+	        "  \033[32;1mdel\033[0m \033[36;1ma?b.c*\033[0m\n");
 	MSG_Add("SHELL_CMD_COPY_HELP","Copy files.\n");
 	MSG_Add("SHELL_CMD_CALL_HELP","Start a batch file from within another batch file.\n");
 	MSG_Add("SHELL_CMD_SUBST_HELP","Assign an internal directory to a drive.\n");
@@ -726,13 +801,14 @@ void SHELL_Init() {
 	MSG_Add("SHELL_CMD_LS_PATH_ERR",
 	        "ls: cannot access '%s': No such file or directory\n");
 
-	MSG_Add("SHELL_CMD_CHOICE_HELP","Waits for a keypress and sets ERRORLEVEL.\n");
-	MSG_Add("SHELL_CMD_CHOICE_HELP_LONG","CHOICE [/C:choices] [/N] [/S] text\n"
+	MSG_Add("SHELL_CMD_CHOICE_HELP",
+	        "Waits for a keypress and sets ERRORLEVEL.\n");
+	MSG_Add("SHELL_CMD_CHOICE_HELP_LONG",
+	        "CHOICE [/C:choices] [/N] [/S] text\n"
 	        "  /C[:]choices  -  Specifies allowable keys.  Default is: yn.\n"
 	        "  /N  -  Do not display the choices at end of prompt.\n"
 	        "  /S  -  Enables case-sensitive choices to be selected.\n"
 	        "  text  -  The text to display as a prompt.\n");
-	MSG_Add("SHELL_CMD_ATTRIB_HELP","Does nothing. Provided for compatibility.\n");
 	MSG_Add("SHELL_CMD_PATH_HELP","Provided for compatibility.\n");
 
 	MSG_Add("SHELL_CMD_VER_HELP", "View or set the reported DOS version.\n");

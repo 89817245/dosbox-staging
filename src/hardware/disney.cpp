@@ -37,8 +37,8 @@ enum DISNEY_STATE { IDLE, RUNNING, FINISHED, ANALYZING };
 struct dac_channel {
 	uint8_t buffer[BUFFER_SAMPLES] = {};
 	uint8_t used = 0; // current data buffer level
-	double speedcheck_sum = 0;
-	double speedcheck_last = 0;
+	double speedcheck_sum = 0.0;
+	double speedcheck_last = 0.0;
 	bool speedcheck_failed = false;
 	bool speedcheck_init = false;
 };
@@ -74,7 +74,8 @@ struct Disney {
 
 static Disney disney;
 
-static void DISNEY_disable(Bitu) {
+static void DISNEY_disable(uint32_t)
+{
 	if (disney.chan) {
 		disney.chan->AddSilence();
 		disney.chan->Enable(false);
@@ -116,86 +117,76 @@ static uint32_t calc_frequency(const dac_channel &dac)
 }
 
 static void DISNEY_analyze(Bitu channel){
-	switch(disney.state) {
-		case DISNEY_STATE::RUNNING: // should not get here
-			break;
-		case DISNEY_STATE::IDLE:
-			// initialize channel data
-			for(int i = 0; i < 2; i++) {
-				disney.da[i].used = 0;
-				disney.da[i].speedcheck_sum = 0;
-				disney.da[i].speedcheck_failed = false;
-				disney.da[i].speedcheck_init = false;
-			}
-			disney.da[channel].speedcheck_last = PIC_FullIndex();
-			disney.da[channel].speedcheck_init = true;
-
-			disney.state = DISNEY_STATE::ANALYZING;
-			break;
-
-		case DISNEY_STATE::FINISHED: 
-		{
-			// The leading channel has the most populated samples
-			disney.leader = disney.da[0].used > disney.da[1].used
-			                        ? &disney.da[0]
-			                        : &disney.da[1];
-
-			// Stereo-mode if both DACs are similarly filled
-			const auto st_diff = abs(disney.da[0].used -
-			                         disney.da[1].used);
-			disney.stereo = (st_diff < 5);
-			
-			// Run with the greater DAC frequency
-			const auto max_freq = std::max(calc_frequency(disney.da[0]),
-			                               calc_frequency(disney.da[1]));
-			DISNEY_enable(max_freq);
-			break;
+	switch (disney.state) {
+	case DISNEY_STATE::RUNNING: // should not get here
+		break;
+	case DISNEY_STATE::IDLE:
+		// initialize channel data
+		for (int i = 0; i < 2; i++) {
+			disney.da[i].used = 0;
+			disney.da[i].speedcheck_sum = 0;
+			disney.da[i].speedcheck_failed = false;
+			disney.da[i].speedcheck_init = false;
 		}
-		case DISNEY_STATE::ANALYZING:
-		{
-			const double current = PIC_FullIndex();
-			dac_channel* cch = &disney.da[channel];
+		disney.da[channel].speedcheck_last = PIC_FullIndex();
+		disney.da[channel].speedcheck_init = true;
 
-			if (!cch->speedcheck_init) {
-				cch->speedcheck_init = true;
-				cch->speedcheck_last = current;
-				break;
-			}
-			cch->speedcheck_sum += current - cch->speedcheck_last;
-			//LOG_MSG("t=%f",current - cch->speedcheck_last);
+		disney.state = DISNEY_STATE::ANALYZING;
+		break;
 
-			// sanity checks (printer...)
-			if ((current - cch-> speedcheck_last) < 0.01 ||
-				(current - cch-> speedcheck_last) > 2)
-				cch->speedcheck_failed = true;
+	case DISNEY_STATE::FINISHED: {
+		// The leading channel has the most populated samples
+		disney.leader = disney.da[0].used > disney.da[1].used
+		                        ? &disney.da[0]
+		                        : &disney.da[1];
 
-			// if both are failed we are back at start
-			if (disney.da[0].speedcheck_failed && disney.da[1].speedcheck_failed) {
-				disney.state = DISNEY_STATE::IDLE;
-				break;
-			}
+		// Stereo-mode if both DACs are similarly filled
+		const auto st_diff = abs(disney.da[0].used - disney.da[1].used);
+		disney.stereo = (st_diff < 5);
 
+		// Run with the greater DAC frequency
+		const auto max_freq = std::max(calc_frequency(disney.da[0]),
+		                               calc_frequency(disney.da[1]));
+		DISNEY_enable(max_freq);
+	} break;
+
+	case DISNEY_STATE::ANALYZING: {
+		const auto current = PIC_FullIndex();
+		dac_channel *cch = &disney.da[channel];
+
+		if (!cch->speedcheck_init) {
+			cch->speedcheck_init = true;
 			cch->speedcheck_last = current;
-
-			// analyze finish condition
-			if (disney.da[0].used > 30 || disney.da[1].used > 30)
-				disney.state = DISNEY_STATE::FINISHED;
 			break;
 		}
+		cch->speedcheck_sum += current - cch->speedcheck_last;
+		// LOG_MSG("t=%f",current - cch->speedcheck_last);
+
+		// sanity checks (printer...)
+		if ((current - cch->speedcheck_last) < 0.01f || (current - cch->speedcheck_last) > 2)
+			cch->speedcheck_failed = true;
+
+		// if both are failed we are back at start
+		if (disney.da[0].speedcheck_failed && disney.da[1].speedcheck_failed) {
+			disney.state = DISNEY_STATE::IDLE;
+			break;
+		}
+
+		cch->speedcheck_last = current;
+
+		// analyze finish condition
+		if (disney.da[0].used > 30 || disney.da[1].used > 30)
+			disney.state = DISNEY_STATE::FINISHED;
+	} break;
 	}
 }
 
-static void disney_write(Bitu port, Bitu data, MAYBE_UNUSED Bitu iolen)
+static void disney_write(io_port_t port, uint8_t val, io_width_t)
 {
-	// Convert the IO data into a single byte-value, as Disney only
-	// operates on 8-bit values (IO ports also registered as IO_MB)
-	assert(data < UINT8_MAX);
-	const auto val = static_cast<uint8_t>(data);
-
 	// LOG_MSG("write disney time %f addr%x val %x",PIC_FullIndex(),port,val);
 	disney.last_used = PIC_Ticks;
-	switch (port-DISNEY_BASE) {
-	case 0:		/* Data Port */
+	switch (port - DISNEY_BASE) {
+	case 0: /* Data Port */
 	{
 		disney.data=val;
 		// if data is written here too often without using the stereo
@@ -214,7 +205,7 @@ static void disney_write(Bitu port, Bitu data, MAYBE_UNUSED Bitu iolen)
 		break;
 	}
 	case 1:		/* Status Port */
-		LOG(LOG_MISC,LOG_NORMAL)("DISNEY:Status write %" sBitfs(X),val);
+		LOG(LOG_MISC, LOG_NORMAL)("DISNEY:Status write %u", val);
 		break;
 	case 2:		/* Control Port */
 		if ((disney.control & 0x2) && !(val & 0x2)) {
@@ -269,12 +260,12 @@ static void disney_write(Bitu port, Bitu data, MAYBE_UNUSED Bitu iolen)
 	}
 }
 
-static Bitu disney_read(Bitu port, MAYBE_UNUSED Bitu iolen)
+static uint8_t disney_read(io_port_t port, io_width_t)
 {
 	uint8_t retval;
 	switch (port - DISNEY_BASE) {
-	case 0:		/* Data Port */
-//		LOG(LOG_MISC,LOG_NORMAL)("DISNEY:Read from data port");
+	case 0: /* Data Port */
+		// LOG(LOG_MISC,LOG_NORMAL)("DISNEY:Read from data port");
 		return disney.data;
 		break;
 	case 1:		/* Status Port */
@@ -371,8 +362,8 @@ static void DISNEY_CallBack(uint16_t len) {
 	}
 	if (disney.last_used+100<PIC_Ticks) {
 		// disable sound output
-		PIC_AddEvent(DISNEY_disable,0.0001f);	// I think we shouldn't delete the 
-												// mixer while we are inside it
+		PIC_AddEvent(DISNEY_disable, 0.0001); // I think we shouldn't delete the
+		                                      // mixer while we are inside it
 	}
 }
 
@@ -409,8 +400,8 @@ void DISNEY_Init(Section* sec) {
 	assert(disney.chan);
 
 	// Register port handlers for 8-bit IO
-	disney.write_handler.Install(DISNEY_BASE, disney_write, IO_MB, 3);
-	disney.read_handler.Install(DISNEY_BASE, disney_read, IO_MB, 3);
+	disney.write_handler.Install(DISNEY_BASE, disney_write, io_width_t::byte, 3);
+	disney.read_handler.Install(DISNEY_BASE, disney_read, io_width_t::byte, 3);
 
 	// Initialize the Disney states
 	disney.status = DISNEY_INIT_STATUS;
